@@ -1,0 +1,125 @@
+@import "tailwindcss";
+@variant dark (&:is(.dark *));
+
+/* ===== foca.ai Design Tokens ===== */
+@theme {
+  /* Primary palette */
+  --color-primary: #1B4F81;
+  --color-primary-light: #4A90D9;
+  --color-primary-50: #E8F0FA;
+  --color-primary-100: #C5D8F2;
+  --color-primary-200: #9DBFE8;
+  --color-primary-300: #75A6DE;
+  --color-primary-400: #4A90D9;
+  --color-primary-500: #1B4F81;
+  --color-primary-600: #164572;
+  --color-primary-700: #123A62;
+  --color-primary-800: #0D3053;
+  --color-primary-900: #092544;
+
+  /* Backgrounds */
+  --color-bg-dark: #0F172A;
+  --color-bg-light: #F1F5F9;
+
+  /* Neutral/surface */
+  --color-surface-dark: #1E293B;
+  --color-surface-light: #FFFFFF;
+  --color-surface-card-dark: #334155;
+  --color-surface-card-light: #FFFFFF;
+
+  /* Text */
+  --color-text-primary-dark: #F1F5F9;
+  --color-text-secondary-dark: #94A3B8;
+  --color-text-primary-light: #0F172A;
+  --color-text-secondary-light: #475569;
+
+  /* Semantic */
+  --color-success: #22C55E;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+  --color-info: #3B82F6;
+
+  /* Typography */
+  --font-family-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-size-base: 1rem; /* 16px minimum for readability */
+}
+
+/* ===== Light/Dark Mode via CSS Custom Properties ===== */
+:root {
+  --bg-app: #F1F5F9;
+  --bg-surface: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --bg-sidebar: #1B4F81;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-sidebar: #F1F5F9;
+  --border-color: #E2E8F0;
+  --focus-ring: #4A90D9;
+}
+
+.dark {
+  --bg-app: #0F172A;
+  --bg-surface: #1E293B;
+  --bg-card: #334155;
+  --bg-sidebar: #0F172A;
+  --text-primary: #F1F5F9;
+  --text-secondary: #94A3B8;
+  --text-sidebar: #F1F5F9;
+  --border-color: #334155;
+  --focus-ring: #4A90D9;
+}
+
+/* Apply CSS variables to body */
+body {
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 1rem;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ===== Neurodivergent Accessibility ===== */
+
+/* Reduced motion: disable ALL animations, transitions, and motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  body {
+    transition: none !important;
+  }
+}
+
+/* No timed interactions: never auto-dismiss or use animation for critical state */
+/* (This is a design constraint enforced in component code, not CSS) */
+
+/* Visible focus indicators on all interactive elements */
+*:focus-visible {
+  outline: 2px solid #4A90D9;
+  outline-offset: 2px;
+}
+
+/* Ensure minimum touch target size (44x44px per WCAG 2.5.5) */
+button, a, [role="button"], input[type="submit"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* High contrast mode support */
+@media (forced-colors: active) {
+  *:focus-visible {
+    outline: 3px solid Highlight;
+  }
+}
+
+/* Reduce transparency for readability */
+.card, .sidebar {
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+}
