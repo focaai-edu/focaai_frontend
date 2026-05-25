@@ -40,30 +40,18 @@ function computeHeadPose(m) {
 
   const RAD2DEG = 180 / Math.PI;
 
-  // Standard ZYX / yaw(Y)-pitch(X)-roll(Z) extraction from a rotation matrix.
-  // pitchX = rotation about X axis, yawY about Y, rollZ about Z.
-  let pitchX, yawY, rollZ;
-  const sy = Math.sqrt(m00 * m00 + m10 * m10); // cos(pitch) magnitude
-  const singular = sy < 1e-6;
-  if (!singular) {
-    pitchX = Math.atan2(-m20, sy);
-    yawY   = Math.atan2(m10, m00);
-    rollZ  = Math.atan2(m21, m22);
-  } else {
-    pitchX = Math.atan2(-m20, sy);
-    yawY   = 0;
-    rollZ  = Math.atan2(-m12, m11);
-  }
+  // Axis mapping empirically verified against MediaPipe's facial transformation
+  // matrix (debug session 260525, two live measurement rounds):
+  //   - Left/right turn (yaw)   lands in atan2(-m20, sy)  → reached ~±44° on turn
+  //   - Up/down nod      (pitch) lands in atan2(m21, m22) → down ≈ -28°, up ≈ +34°
+  //   - Shoulder tilt    (roll)  lands in atan2(m10, m00)
+  // pitch sign already matches the useAttention contract (pitch < 0 = head DOWN,
+  // pitch > 0 = head UP), confirmed via EAR drop on look-down — no flip needed.
+  const sy = Math.sqrt(m00 * m00 + m10 * m10); // cos magnitude, keeps yaw in range
 
-  let pitch = pitchX * RAD2DEG;
-  let yaw   = yawY   * RAD2DEG;
-  let roll  = rollZ  * RAD2DEG;
-
-  // Sign normalization to match useAttention contract:
-  //   pitch > 0 = head UP, pitch < 0 = head DOWN.
-  // MediaPipe's camera-space convention reports head-down as POSITIVE X rotation,
-  // which is the opposite of what useAttention expects, so flip pitch.
-  pitch = -pitch;
+  const yaw   = Math.atan2(-m20, sy) * RAD2DEG; // left/right turn
+  const pitch = Math.atan2(m21, m22) * RAD2DEG; // up/down nod (down < 0, up > 0)
+  const roll  = Math.atan2(m10, m00) * RAD2DEG; // shoulder tilt
 
   return { yaw, pitch, roll };
 }
@@ -161,6 +149,16 @@ self.onmessage = async function(event) {
           const matrixData = results.facialTransformationMatrixes?.[0]?.data;
           const pose = computeHeadPose(matrixData);
           const ear = computeEAR(landmarks);
+
+          // Throttled diagnostic — logs head pose + EAR ~1x/s to the browser console
+          const _now = Date.now();
+          if (!self.__lastLog || _now - self.__lastLog > 1000) {
+            self.__lastLog = _now;
+            const matLen = matrixData ? matrixData.length : 'MISSING';
+            console.log(
+              `[attention-worker] matrix=${matLen} | yaw=${pose.yaw.toFixed(1)} pitch=${pose.pitch.toFixed(1)} roll=${pose.roll.toFixed(1)} | ear=${ear.toFixed(3)}`
+            );
+          }
 
           // Pack x,y of all 478 landmarks into a transferable Float32Array
           const buf = new Float32Array(landmarks.length * 2);
