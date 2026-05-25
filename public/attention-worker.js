@@ -10,7 +10,7 @@
  *
  * Messages TO main thread:
  *   { type: 'ready' }
- *   { type: 'pose', yaw, pitch, roll, ear, timestamp }
+ *   { type: 'pose', yaw, pitch, roll, ear, landmarkBuffer, timestamp }
  *   { type: 'error', message: string }
  */
 
@@ -25,44 +25,45 @@ let thresholds = {
   break:          null
 };
 
-// Head pose computation from MediaPipe 478 face landmarks
-// Using simplified method based on nose, chin, eye corners
+// Head pose computation from MediaPipe facial transformation matrix.
+// Takes the 16-element column-major Float32Array from
+// results.facialTransformationMatrixes[0].data and returns Euler angles in degrees.
 
-function computeHeadPose(landmarks) {
-  // Key landmarks (MediaPipe FaceMesh indices)
-  // Nose tip: 1
-  // Chin: 152
-  // Left eye inner: 133, outer: 33
-  // Right eye inner: 362, outer: 263
-  // Mouth left: 61, right: 291
-  // Forehead (for pitch): 10
+function computeHeadPose(m) {
+  // m is a 16-element column-major Float32Array (4x4). Guard for absence.
+  if (!m || m.length < 16) return { yaw: 0, pitch: 0, roll: 0 };
 
-  const noseTip = landmarks[1];
-  const chin = landmarks[152];
-  const leftEye = landmarks[33];    // outer corner
-  const rightEye = landmarks[263];  // outer corner
-  const forehead = landmarks[10];
+  // Column-major: element[row][col] = m[col*4 + row]
+  const m00 = m[0],  m10 = m[1],  m20 = m[2];
+  const m01 = m[4],  m11 = m[5],  m21 = m[6];
+  const m02 = m[8],  m12 = m[9],  m22 = m[10];
 
-  if (!noseTip || !chin || !leftEye || !rightEye || !forehead) {
-    return { yaw: 0, pitch: 0, roll: 0 };
+  const RAD2DEG = 180 / Math.PI;
+
+  // Standard ZYX / yaw(Y)-pitch(X)-roll(Z) extraction from a rotation matrix.
+  // pitchX = rotation about X axis, yawY about Y, rollZ about Z.
+  let pitchX, yawY, rollZ;
+  const sy = Math.sqrt(m00 * m00 + m10 * m10); // cos(pitch) magnitude
+  const singular = sy < 1e-6;
+  if (!singular) {
+    pitchX = Math.atan2(-m20, sy);
+    yawY   = Math.atan2(m10, m00);
+    rollZ  = Math.atan2(m21, m22);
+  } else {
+    pitchX = Math.atan2(-m20, sy);
+    yawY   = 0;
+    rollZ  = Math.atan2(-m12, m11);
   }
 
-  // Compute face center (midpoint between eyes + nose)
-  const faceCenterX = (leftEye.x + rightEye.x + noseTip.x) / 3;
-  const faceCenterY = (leftEye.y + rightEye.y + noseTip.y) / 3;
+  let pitch = pitchX * RAD2DEG;
+  let yaw   = yawY   * RAD2DEG;
+  let roll  = rollZ  * RAD2DEG;
 
-  // Yaw: horizontal angle of nose relative to face center
-  // Distance from nose to face center X = yaw indicator
-  const eyeMidX = (leftEye.x + rightEye.x) / 2;
-  const yaw = (noseTip.x - eyeMidX) * 60; // Scale to degrees approx
-
-  // Pitch: vertical angle — nose to forehead distance
-  const pitch = (noseTip.y - forehead.y) * 50;
-
-  // Roll: angle of eye line
-  const dx = rightEye.x - leftEye.x;
-  const dy = rightEye.y - leftEye.y;
-  const roll = Math.atan2(dy, dx) * (180 / Math.PI);
+  // Sign normalization to match useAttention contract:
+  //   pitch > 0 = head UP, pitch < 0 = head DOWN.
+  // MediaPipe's camera-space convention reports head-down as POSITIVE X rotation,
+  // which is the opposite of what useAttention expects, so flip pitch.
+  pitch = -pitch;
 
   return { yaw, pitch, roll };
 }
@@ -122,7 +123,7 @@ self.onmessage = async function(event) {
             delegate: 'CPU', // GPU may not be available inside Web Workers
           },
           outputFaceBlendshapes: false,
-          outputFacialTransformationMatrixes: false,
+          outputFacialTransformationMatrixes: true,
           runningMode: 'VIDEO',
           numFaces: 1,
         });
@@ -157,7 +158,8 @@ self.onmessage = async function(event) {
 
         if (results.faceLandmarks && results.faceLandmarks.length > 0) {
           const landmarks = results.faceLandmarks[0];
-          const pose = computeHeadPose(landmarks);
+          const matrixData = results.facialTransformationMatrixes?.[0]?.data;
+          const pose = computeHeadPose(matrixData);
           const ear = computeEAR(landmarks);
 
           // Pack x,y of all 478 landmarks into a transferable Float32Array
