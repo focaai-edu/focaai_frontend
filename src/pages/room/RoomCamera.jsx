@@ -151,34 +151,28 @@ export default function RoomCamera() {
       {/* Main */}
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 relative bg-black">
-          <video ref={videoRef} className="hidden" playsInline muted />
           <canvas ref={canvasRef} className="hidden" />
 
-          {streamActive ? (
-            <div className="relative w-full h-full">
-              <video
-                ref={videoRef}
-                className="w-full h-full object-contain"
-                playsInline muted autoPlay
-                onLoadedMetadata={() => {
-                  const displayVideo = document.querySelector('video[autoplay]');
-                  if (displayVideo && videoRef.current?.srcObject) {
-                    displayVideo.srcObject = videoRef.current.srcObject;
-                  }
-                }}
-              />
+          <div className="relative w-full h-full">
+            <video
+              ref={videoRef}
+              className={streamActive ? 'w-full h-full object-contain' : 'hidden'}
+              playsInline muted autoPlay
+            />
+            {streamActive && (
               <canvas ref={overlayRef} className="absolute inset-0 w-full h-full" />
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <svg className="w-12 h-12 mx-auto mb-3 text-[#64748B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                <p className="text-[#64748B] text-sm">Câmera desligada. Clique em "Ligar Câmera" para iniciar.</p>
+            )}
+            {!streamActive && (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <svg className="w-12 h-12 mx-auto mb-3 text-[#64748B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-[#64748B] text-sm">Câmera desligada. Clique em "Ligar Câmera" para iniciar.</p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Sidebar */}
