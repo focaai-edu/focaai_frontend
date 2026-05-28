@@ -14,6 +14,14 @@ export default function RoomCamera() {
   const [availableClasses, setAvailableClasses] = useState([]);
   const [selectedClassId, setSelectedClassId] = useState(null);
 
+  // Task 1: diagnostics state
+  const [connected, setConnected] = useState(socket.connected);
+  const [framesSent, setFramesSent] = useState(0);
+  const [lastResponse, setLastResponse] = useState(null); // { at: number, faceCount: number }
+
+  // Task 2: 1-second ticker for "Xs atrás"
+  const [now, setNow] = useState(Date.now());
+
   useEffect(() => {
     api.get('/api/classes', { params: { status: 'live' } })
       .then(res => {
@@ -24,6 +32,25 @@ export default function RoomCamera() {
         }
       })
       .catch(() => {});
+  }, []);
+
+  // Task 1: track socket connection state
+  useEffect(() => {
+    const onConnect = () => setConnected(true);
+    const onDisconnect = () => setConnected(false);
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    setConnected(socket.connected);
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+    };
+  }, []);
+
+  // Task 2: 1-second ticker
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
   }, []);
 
   const startCamera = useCallback(async () => {
@@ -64,6 +91,9 @@ export default function RoomCamera() {
       if (data.class_id === selectedClassId) {
         setDetectedFaces(data.faces || []);
         drawOverlay(data.faces || []);
+        // Task 1: record response and log
+        setLastResponse({ at: Date.now(), faceCount: (data.faces || []).length });
+        console.log('[room] faces_identified:', (data.faces || []).length, 'faces', data.faces);
       }
     });
 
@@ -73,8 +103,9 @@ export default function RoomCamera() {
     };
   }, [selectedClassId]);
 
+  // Task 1: capture effect — connection-aware, deps include `connected`
   useEffect(() => {
-    if (!streamActive || !selectedClassId || !socket.connected) return;
+    if (!streamActive || !selectedClassId || !connected) return;
     const interval = setInterval(() => {
       if (!videoRef.current || !canvasRef.current) return;
       const video = videoRef.current;
@@ -84,9 +115,10 @@ export default function RoomCamera() {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0);
       socket.emit('room_frame', { class_id: selectedClassId, frame_base64: canvas.toDataURL('image/jpeg', 0.7) });
+      setFramesSent((n) => n + 1);
     }, 4000);
     return () => clearInterval(interval);
-  }, [streamActive, selectedClassId]);
+  }, [streamActive, selectedClassId, connected]);
 
   const drawOverlay = useCallback((faces) => {
     if (!overlayRef.current) return;
@@ -151,17 +183,44 @@ export default function RoomCamera() {
       {/* Main */}
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 relative bg-black">
+          {/* Hidden capture canvas — NOT flipped, sends raw frame to backend */}
           <canvas ref={canvasRef} className="hidden" />
 
           <div className="relative w-full h-full">
-            <video
-              ref={videoRef}
-              className={streamActive ? 'w-full h-full object-contain' : 'hidden'}
-              playsInline muted autoPlay
-            />
+            {/* Task 2: Diagnostics HUD — outside the flipped wrapper so text reads normally */}
             {streamActive && (
-              <canvas ref={overlayRef} className="absolute inset-0 w-full h-full" />
+              <div className="absolute top-3 left-3 z-10 bg-black/60 text-white text-xs font-mono rounded-md px-3 py-2 space-y-0.5 pointer-events-none">
+                <div>{connected ? '🟢 Socket conectado' : '🔴 Socket desconectado'}</div>
+                <div>Frames enviados: {framesSent}</div>
+                <div>
+                  {lastResponse
+                    ? `Última resposta: ${Math.max(0, Math.round((now - lastResponse.at) / 1000))}s atrás · ${lastResponse.faceCount} rosto(s)`
+                    : 'Aguardando resposta do servidor...'}
+                </div>
+              </div>
             )}
+
+            {/* Task 3: Flipped wrapper for video + overlay together — correct (un-mirrored) orientation */}
+            {streamActive && (
+              <div className="w-full h-full" style={{ transform: 'scaleX(-1)' }}>
+                <video
+                  ref={videoRef}
+                  className="w-full h-full object-contain"
+                  playsInline muted autoPlay
+                />
+                <canvas ref={overlayRef} className="absolute inset-0 w-full h-full" />
+              </div>
+            )}
+
+            {/* Hidden video element when stream is not active (keeps ref valid) */}
+            {!streamActive && (
+              <video
+                ref={videoRef}
+                className="hidden"
+                playsInline muted autoPlay
+              />
+            )}
+
             {!streamActive && (
               <div className="flex items-center justify-center h-full">
                 <div className="text-center">
@@ -177,7 +236,10 @@ export default function RoomCamera() {
 
         {/* Sidebar */}
         <div className="w-[300px] bg-[#1E293B] p-4 border-l border-[#334155] overflow-y-auto">
-          <h3 className="text-base font-semibold mb-4 text-white">Alunos Detectados ({detectedFaces.length})</h3>
+          <h3 className="text-base font-semibold mb-1 text-white">Alunos Detectados ({detectedFaces.length})</h3>
+          <p className="text-[#64748B] text-xs mb-4">
+            Se &quot;Frames enviados&quot; sobe mas a resposta fica em 0 rostos, verifique luz, cadastro facial e pesos do detector.
+          </p>
           {detectedFaces.length === 0 ? (
             <p className="text-[#64748B] text-xs">Nenhum rosto detectado.</p>
           ) : (
