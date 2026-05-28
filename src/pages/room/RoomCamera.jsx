@@ -200,29 +200,24 @@ export default function RoomCamera() {
               </div>
             )}
 
-            {/* Task 3: Flipped wrapper for video + overlay together — correct (un-mirrored) orientation */}
-            {streamActive && (
-              <div className="w-full h-full" style={{ transform: 'scaleX(-1)' }}>
-                <video
-                  ref={videoRef}
-                  className="w-full h-full object-contain"
-                  playsInline muted autoPlay
-                />
-                <canvas ref={overlayRef} className="absolute inset-0 w-full h-full" />
-              </div>
-            )}
-
-            {/* Hidden video element when stream is not active (keeps ref valid) */}
-            {!streamActive && (
+            {/* Task 3: ONE always-mounted video + overlay inside a single flipped wrapper.
+                The video stays mounted (ref stable) and is hidden via CSS when inactive, so the
+                srcObject assigned in startCamera survives the streamActive toggle (no black screen).
+                Both video and overlay share the scaleX(-1) flip → un-mirrored display, aligned boxes. */}
+            <div className="w-full h-full" style={{ transform: 'scaleX(-1)' }}>
               <video
                 ref={videoRef}
-                className="hidden"
+                className={streamActive ? 'w-full h-full object-contain' : 'hidden'}
                 playsInline muted autoPlay
               />
-            )}
+              {streamActive && (
+                <canvas ref={overlayRef} className="absolute inset-0 w-full h-full" />
+              )}
+            </div>
 
+            {/* Placeholder when stream is off — outside the flip so icon/text read normally */}
             {!streamActive && (
-              <div className="flex items-center justify-center h-full">
+              <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">
                   <svg className="w-12 h-12 mx-auto mb-3 text-[#64748B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
