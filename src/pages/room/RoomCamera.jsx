@@ -54,13 +54,17 @@ export default function RoomCamera() {
       const isIdentified = face.student_id !== null && face.student_id !== undefined;
       const color = isIdentified ? '#22C55E' : '#F59E0B';
 
+      // The displayed video is CSS-mirrored (scaleX(-1)); this overlay is NOT.
+      // Mirror only the box x so it lands on the face, while text stays readable.
+      const fx = overlay.width - bbox.x - bbox.w;
+
       // Thick, glowing box so a detection is unmistakable on screen
       ctx.save();
       ctx.shadowColor = color;
       ctx.shadowBlur = 18;
       ctx.strokeStyle = color;
       ctx.lineWidth = 5;
-      ctx.strokeRect(bbox.x, bbox.y, bbox.w, bbox.h);
+      ctx.strokeRect(fx, bbox.y, bbox.w, bbox.h);
       ctx.restore();
 
       const label = isIdentified
@@ -70,9 +74,9 @@ export default function RoomCamera() {
       const tw = ctx.measureText(label).width;
       const ly = Math.max(0, bbox.y - 28);
       ctx.fillStyle = color;
-      ctx.fillRect(bbox.x, ly, tw + 12, 26);
+      ctx.fillRect(fx, ly, tw + 12, 26);
       ctx.fillStyle = '#0F172A';
-      ctx.fillText(label, bbox.x + 6, ly + 19);
+      ctx.fillText(label, fx + 6, ly + 19);
     });
   }, []);
 
@@ -240,20 +244,23 @@ export default function RoomCamera() {
               </div>
             )}
 
-            {/* Task 3: ONE always-mounted video + overlay inside a single flipped wrapper.
-                The video stays mounted (ref stable) and is hidden via CSS when inactive, so the
-                srcObject assigned in startCamera survives the streamActive toggle (no black screen).
-                Both video and overlay share the scaleX(-1) flip → un-mirrored display, aligned boxes. */}
+            {/* ONE always-mounted video inside the flipped wrapper. The video stays mounted
+                (ref stable) and is hidden via CSS when inactive, so the srcObject assigned in
+                startCamera survives the streamActive toggle (no black screen). Only the VIDEO is
+                flipped here — the overlay is a non-flipped sibling (below) so its TEXT reads
+                normally; drawOverlay mirrors the box x-coords to stay aligned with the flipped video. */}
             <div className="w-full h-full" style={{ transform: 'scaleX(-1)' }}>
               <video
                 ref={videoRef}
                 className={streamActive ? 'w-full h-full object-contain' : 'hidden'}
                 playsInline muted autoPlay
               />
-              {streamActive && (
-                <canvas ref={overlayRef} className="absolute inset-0 w-full h-full" />
-              )}
             </div>
+
+            {/* Overlay canvas — NOT flipped (text reads normally); boxes drawn at mirrored x */}
+            {streamActive && (
+              <canvas ref={overlayRef} className="absolute inset-0 w-full h-full" />
+            )}
 
             {/* Placeholder when stream is off — outside the flip so icon/text read normally */}
             {!streamActive && (
