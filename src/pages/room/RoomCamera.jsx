@@ -6,6 +6,7 @@ export default function RoomCamera() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const overlayRef = useRef(null);
+  const selectedClassIdRef = useRef(null);
 
   const [streamActive, setStreamActive] = useState(false);
   const [error, setError] = useState('');
@@ -34,18 +35,76 @@ export default function RoomCamera() {
       .catch(() => {});
   }, []);
 
-  // Task 1: track socket connection state
+  // Keep latest selectedClassId reachable inside the mount-once socket handlers
+  useEffect(() => { selectedClassIdRef.current = selectedClassId; }, [selectedClassId]);
+
+  // Draw face boxes onto the overlay canvas (raw-frame coords; the scaleX(-1)
+  // wrapper flips video + overlay together so boxes stay aligned).
+  const drawOverlay = useCallback((faces) => {
+    if (!overlayRef.current) return;
+    const overlay = overlayRef.current;
+    const ctx = overlay.getContext('2d');
+    overlay.width = videoRef.current?.videoWidth || 1280;
+    overlay.height = videoRef.current?.videoHeight || 720;
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+    faces.forEach((face) => {
+      const { bbox } = face;
+      if (!bbox) return;
+      const isIdentified = face.student_id !== null && face.student_id !== undefined;
+      const color = isIdentified ? '#22C55E' : '#F59E0B';
+
+      // Thick, glowing box so a detection is unmistakable on screen
+      ctx.save();
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 18;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 5;
+      ctx.strokeRect(bbox.x, bbox.y, bbox.w, bbox.h);
+      ctx.restore();
+
+      const label = isIdentified
+        ? `${face.student_name || face.student_id} (${Math.round((face.confidence || 0) * 100)}%)`
+        : 'Não identificado';
+      ctx.font = 'bold 20px Inter, sans-serif';
+      const tw = ctx.measureText(label).width;
+      const ly = Math.max(0, bbox.y - 28);
+      ctx.fillStyle = color;
+      ctx.fillRect(bbox.x, ly, tw + 12, 26);
+      ctx.fillStyle = '#0F172A';
+      ctx.fillText(label, bbox.x + 6, ly + 19);
+    });
+  }, []);
+
+  // Mount-once: connection tracking + faces handler + auto (re)join on connect.
+  // The handler is registered a single time with a class-id ref, avoiding the
+  // stale-closure / "socket.off removes all" races that made detections only
+  // appear after a manual page refresh.
   useEffect(() => {
-    const onConnect = () => setConnected(true);
+    const onConnect = () => {
+      setConnected(true);
+      const cid = selectedClassIdRef.current;
+      if (cid) socket.emit('join_class', { class_id: cid });
+    };
     const onDisconnect = () => setConnected(false);
+    const onFaces = (data) => {
+      if (data.class_id !== selectedClassIdRef.current) return;
+      const faces = data.faces || [];
+      setDetectedFaces(faces);
+      drawOverlay(faces);
+      setLastResponse({ at: Date.now(), faceCount: faces.length });
+      console.log('[room] faces_identified:', faces.length, 'faces', faces);
+    };
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    socket.on('faces_identified', onFaces);
     setConnected(socket.connected);
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
+      socket.off('faces_identified', onFaces);
     };
-  }, []);
+  }, [drawOverlay]);
 
   // Task 2: 1-second ticker
   useEffect(() => {
@@ -82,24 +141,14 @@ export default function RoomCamera() {
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
+  // Join the class room when a class is selected. If the socket isn't connected
+  // yet, the onConnect handler above performs the join once connected.
   useEffect(() => {
     if (!selectedClassId) return;
     if (!socket.connected) socket.connect();
-    socket.emit('join_class', { class_id: selectedClassId });
-
-    socket.on('faces_identified', (data) => {
-      if (data.class_id === selectedClassId) {
-        setDetectedFaces(data.faces || []);
-        drawOverlay(data.faces || []);
-        // Task 1: record response and log
-        setLastResponse({ at: Date.now(), faceCount: (data.faces || []).length });
-        console.log('[room] faces_identified:', (data.faces || []).length, 'faces', data.faces);
-      }
-    });
-
+    else socket.emit('join_class', { class_id: selectedClassId });
     return () => {
       socket.emit('leave_class', { class_id: selectedClassId });
-      socket.off('faces_identified');
     };
   }, [selectedClassId]);
 
@@ -119,32 +168,6 @@ export default function RoomCamera() {
     }, 4000);
     return () => clearInterval(interval);
   }, [streamActive, selectedClassId, connected]);
-
-  const drawOverlay = useCallback((faces) => {
-    if (!overlayRef.current) return;
-    const overlay = overlayRef.current;
-    const ctx = overlay.getContext('2d');
-    overlay.width = videoRef.current?.videoWidth || 1280;
-    overlay.height = videoRef.current?.videoHeight || 720;
-    ctx.clearRect(0, 0, overlay.width, overlay.height);
-
-    faces.forEach(face => {
-      const { bbox } = face;
-      const isIdentified = face.student_id !== null;
-      const color = isIdentified ? '#22C55E' : '#9CA3AF';
-
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 3;
-      ctx.strokeRect(bbox.x, bbox.y, bbox.w, bbox.h);
-
-      const label = isIdentified
-        ? `${face.student_name || face.student_id} (${Math.round(face.confidence * 100)}%)`
-        : '?';
-      ctx.fillStyle = color;
-      ctx.font = '14px Inter, sans-serif';
-      ctx.fillText(label, bbox.x, bbox.y - 5);
-    });
-  }, []);
 
   if (availableClasses.length === 0) {
     return (
@@ -197,6 +220,23 @@ export default function RoomCamera() {
                     ? `Última resposta: ${Math.max(0, Math.round((now - lastResponse.at) / 1000))}s atrás · ${lastResponse.faceCount} rosto(s)`
                     : 'Aguardando resposta do servidor...'}
                 </div>
+              </div>
+            )}
+
+            {/* Detection badge — big, pulsing cue (like the student camera's live feedback) */}
+            {streamActive && (
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+                {detectedFaces.length > 0 ? (
+                  <div className="flex items-center gap-2 bg-green-500/90 text-white font-semibold text-sm rounded-full px-4 py-1.5 shadow-lg animate-pulse">
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-white" />
+                    {detectedFaces.length} rosto(s) detectado(s)
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 bg-black/60 text-gray-300 text-sm rounded-full px-4 py-1.5">
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-400" />
+                    Procurando rostos...
+                  </div>
+                )}
               </div>
             )}
 
