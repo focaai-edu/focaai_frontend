@@ -2,26 +2,56 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import socket from '../../services/socket';
 import api from '../../services/api';
 
+// Thresholds per monitoring mode (degrees)
+const MODE_THRESHOLDS = {
+  full_attention: { yaw: 35, pitch_up: 25, pitch_down: 20 },
+  activity:       { yaw: 40, pitch_up: 30, pitch_down: null },
+  exam:           { yaw: 25, pitch_up: 20, pitch_down: null },
+  break:          null,
+};
+
+// Copied from attention-worker.js — same empirically verified axis mapping
+function computeHeadPose(m) {
+  if (!m || m.length < 16) return { yaw: 0, pitch: 0, roll: 0 };
+  const m00 = m[0], m10 = m[1], m20 = m[2];
+  const m01 = m[4], m11 = m[5], m21 = m[6];
+  const m02 = m[8], m12 = m[9], m22 = m[10];
+  const RAD2DEG = 180 / Math.PI;
+  const sy = Math.sqrt(m00 * m00 + m10 * m10);
+  return {
+    yaw:   Math.atan2(-m20, sy) * RAD2DEG,
+    pitch: Math.atan2(m21, m22) * RAD2DEG,
+    roll:  Math.atan2(m10, m00) * RAD2DEG,
+  };
+}
+
+function isDistracted(yaw, pitch, mode) {
+  const t = MODE_THRESHOLDS[mode || 'full_attention'];
+  if (!t) return false;
+  if (Math.abs(yaw) > t.yaw) return true;
+  if (t.pitch_up !== null && pitch > t.pitch_up) return true;
+  if (t.pitch_down !== null && pitch < -t.pitch_down) return true;
+  return false;
+}
+
 export default function RoomCamera() {
   const videoRef = useRef(null);
-  const canvasRef = useRef(null);
   const overlayRef = useRef(null);
+  const landmarkerRef = useRef(null);
+  const rafRef = useRef(null);
+  const lastDetectRef = useRef(0);
+  const currentModeRef = useRef('full_attention');
   const selectedClassIdRef = useRef(null);
 
   const [streamActive, setStreamActive] = useState(false);
   const [error, setError] = useState('');
-  const [detectedFaces, setDetectedFaces] = useState([]);
   const [liveClass, setLiveClass] = useState(null);
   const [availableClasses, setAvailableClasses] = useState([]);
   const [selectedClassId, setSelectedClassId] = useState(null);
-
-  // Task 1: diagnostics state
   const [connected, setConnected] = useState(socket.connected);
-  const [framesSent, setFramesSent] = useState(0);
-  const [lastResponse, setLastResponse] = useState(null); // { at: number, faceCount: number }
-
-  // Task 2: 1-second ticker for "Xs atrás"
-  const [now, setNow] = useState(Date.now());
+  const [mpReady, setMpReady] = useState(false);
+  const [mpError, setMpError] = useState('');
+  const [aggregate, setAggregate] = useState(null); // { total, attentive, distracted, pct }
 
   useEffect(() => {
     api.get('/api/classes', { params: { status: 'live' } })
@@ -35,55 +65,51 @@ export default function RoomCamera() {
       .catch(() => {});
   }, []);
 
-  // Keep latest selectedClassId reachable inside the mount-once socket handlers
   useEffect(() => { selectedClassIdRef.current = selectedClassId; }, [selectedClassId]);
+  useEffect(() => {
+    if (liveClass?.monitoring_mode) currentModeRef.current = liveClass.monitoring_mode;
+  }, [liveClass]);
 
-  // Draw face boxes onto the overlay canvas (raw-frame coords; the scaleX(-1)
-  // wrapper flips video + overlay together so boxes stay aligned).
-  const drawOverlay = useCallback((faces) => {
-    if (!overlayRef.current) return;
-    const overlay = overlayRef.current;
-    const ctx = overlay.getContext('2d');
-    overlay.width = videoRef.current?.videoWidth || 1280;
-    overlay.height = videoRef.current?.videoHeight || 720;
-    ctx.clearRect(0, 0, overlay.width, overlay.height);
-
-    faces.forEach((face) => {
-      const { bbox } = face;
-      if (!bbox) return;
-      const isIdentified = face.student_id !== null && face.student_id !== undefined;
-      const color = isIdentified ? '#22C55E' : '#F59E0B';
-
-      // The displayed video is CSS-mirrored (scaleX(-1)); this overlay is NOT.
-      // Mirror only the box x so it lands on the face, while text stays readable.
-      const fx = overlay.width - bbox.x - bbox.w;
-
-      // Thick, glowing box so a detection is unmistakable on screen
-      ctx.save();
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 18;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 5;
-      ctx.strokeRect(fx, bbox.y, bbox.w, bbox.h);
-      ctx.restore();
-
-      const label = isIdentified
-        ? `${face.student_name || face.student_id} (${Math.round((face.confidence || 0) * 100)}%)`
-        : 'Não identificado';
-      ctx.font = 'bold 20px Inter, sans-serif';
-      const tw = ctx.measureText(label).width;
-      const ly = Math.max(0, bbox.y - 28);
-      ctx.fillStyle = color;
-      ctx.fillRect(fx, ly, tw + 12, 26);
-      ctx.fillStyle = '#0F172A';
-      ctx.fillText(label, fx + 6, ly + 19);
-    });
+  // Initialize MediaPipe FaceLandmarker once on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function init() {
+      try {
+        const { FilesetResolver, FaceLandmarker } = await import(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs'
+        );
+        const vision = await FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
+        );
+        const fl = await FaceLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+            delegate: 'GPU',
+          },
+          outputFaceBlendshapes: false,
+          outputFacialTransformationMatrixes: true,
+          runningMode: 'VIDEO',
+          numFaces: 10,
+        });
+        if (!cancelled) {
+          landmarkerRef.current = fl;
+          setMpReady(true);
+        }
+      } catch (err) {
+        if (!cancelled) setMpError('Erro ao carregar MediaPipe: ' + err.message);
+      }
+    }
+    init();
+    return () => {
+      cancelled = true;
+      if (landmarkerRef.current) {
+        landmarkerRef.current.close();
+        landmarkerRef.current = null;
+      }
+    };
   }, []);
 
-  // Mount-once: connection tracking + faces handler + auto (re)join on connect.
-  // The handler is registered a single time with a class-id ref, avoiding the
-  // stale-closure / "socket.off removes all" races that made detections only
-  // appear after a manual page refresh.
+  // Socket connection tracking and auto-join
   useEffect(() => {
     const onConnect = () => {
       setConnected(true);
@@ -91,30 +117,117 @@ export default function RoomCamera() {
       if (cid) socket.emit('join_class', { class_id: cid });
     };
     const onDisconnect = () => setConnected(false);
-    const onFaces = (data) => {
-      if (data.class_id !== selectedClassIdRef.current) return;
-      const faces = data.faces || [];
-      setDetectedFaces(faces);
-      drawOverlay(faces);
-      setLastResponse({ at: Date.now(), faceCount: faces.length });
-      console.log('[room] faces_identified:', faces.length, 'faces', faces);
-    };
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
-    socket.on('faces_identified', onFaces);
     setConnected(socket.connected);
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
-      socket.off('faces_identified', onFaces);
     };
-  }, [drawOverlay]);
-
-  // Task 2: 1-second ticker
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
   }, []);
+
+  // Join class room when selected
+  useEffect(() => {
+    if (!selectedClassId) return;
+    if (!socket.connected) socket.connect();
+    else socket.emit('join_class', { class_id: selectedClassId });
+    return () => {
+      socket.emit('leave_class', { class_id: selectedClassId });
+    };
+  }, [selectedClassId]);
+
+  const drawFaceBoxes = useCallback((faceBoxes) => {
+    if (!overlayRef.current || !videoRef.current) return;
+    const overlay = overlayRef.current;
+    const ctx = overlay.getContext('2d');
+    const W = videoRef.current.videoWidth || 1280;
+    const H = videoRef.current.videoHeight || 720;
+    overlay.width = W;
+    overlay.height = H;
+    ctx.clearRect(0, 0, W, H);
+    faceBoxes.forEach(({ x, y, w, h, distracted: dist }) => {
+      const px = x * W, py = y * H, pw = w * W, ph = h * H;
+      const fx = W - px - pw; // mirror x (video is CSS-flipped)
+      const color = dist ? '#F59E0B' : '#22C55E';
+      ctx.save();
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      ctx.strokeRect(fx, py, pw, ph);
+      ctx.restore();
+    });
+  }, []);
+
+  const processResults = useCallback((results) => {
+    const matrices = results.facialTransformationMatrixes || [];
+    const mode = currentModeRef.current;
+    let attentive = 0, distracted = 0;
+    const faceBoxes = [];
+
+    matrices.forEach((mat, i) => {
+      const pose = computeHeadPose(mat.data);
+      const dist = isDistracted(pose.yaw, pose.pitch, mode);
+      if (dist) distracted++; else attentive++;
+
+      const lms = results.faceLandmarks?.[i];
+      if (lms && lms.length > 0) {
+        const xs = lms.map(p => p.x);
+        const ys = lms.map(p => p.y);
+        faceBoxes.push({
+          x: Math.min(...xs), y: Math.min(...ys),
+          w: Math.max(...xs) - Math.min(...xs),
+          h: Math.max(...ys) - Math.min(...ys),
+          distracted: dist,
+        });
+      }
+    });
+
+    const total = attentive + distracted;
+    const pct = total > 0 ? Math.round(attentive / total * 100) : 0;
+    setAggregate(total > 0 ? { total, attentive, distracted, pct } : null);
+    drawFaceBoxes(faceBoxes);
+
+    const cid = selectedClassIdRef.current;
+    if (cid && total > 0) {
+      socket.emit('room_attention', {
+        class_id: cid,
+        total_faces: total,
+        attentive,
+        distracted,
+        attention_pct: pct,
+        monitoring_mode: mode,
+      });
+    }
+  }, [drawFaceBoxes]);
+
+  // Detection loop — runs at 2 FPS (500ms throttle) via rAF
+  useEffect(() => {
+    if (!streamActive || !mpReady) return;
+    const INTERVAL = 500;
+    function detect(now) {
+      rafRef.current = requestAnimationFrame(detect);
+      if (now - lastDetectRef.current < INTERVAL) return;
+      lastDetectRef.current = now;
+      const video = videoRef.current;
+      if (!video || video.readyState < 2 || !landmarkerRef.current) return;
+      try {
+        const results = landmarkerRef.current.detectForVideo(video, now);
+        processResults(results);
+      } catch (e) {
+        // ignore occasional detectForVideo errors during stream start/stop
+      }
+    }
+    rafRef.current = requestAnimationFrame(detect);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      setAggregate(null);
+      if (overlayRef.current) {
+        const ctx = overlayRef.current.getContext('2d');
+        ctx.clearRect(0, 0, overlayRef.current.width, overlayRef.current.height);
+      }
+    };
+  }, [streamActive, mpReady, processResults]);
 
   const startCamera = useCallback(async () => {
     setError('');
@@ -130,7 +243,7 @@ export default function RoomCamera() {
       setStreamActive(true);
     } catch (err) {
       if (err.name === 'NotAllowedError') setError('Permissão de câmera negada.');
-      else if (err.name === 'NotFoundError') setError('Nenhuma câmera USB encontrada.');
+      else if (err.name === 'NotFoundError') setError('Nenhuma câmera encontrada.');
       else setError('Erro ao acessar câmera: ' + err.message);
     }
   }, []);
@@ -145,33 +258,7 @@ export default function RoomCamera() {
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
-  // Join the class room when a class is selected. If the socket isn't connected
-  // yet, the onConnect handler above performs the join once connected.
-  useEffect(() => {
-    if (!selectedClassId) return;
-    if (!socket.connected) socket.connect();
-    else socket.emit('join_class', { class_id: selectedClassId });
-    return () => {
-      socket.emit('leave_class', { class_id: selectedClassId });
-    };
-  }, [selectedClassId]);
-
-  // Task 1: capture effect — connection-aware, deps include `connected`
-  useEffect(() => {
-    if (!streamActive || !selectedClassId || !connected) return;
-    const interval = setInterval(() => {
-      if (!videoRef.current || !canvasRef.current) return;
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth || 1280;
-      canvas.height = video.videoHeight || 720;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0);
-      socket.emit('room_frame', { class_id: selectedClassId, frame_base64: canvas.toDataURL('image/jpeg', 0.7) });
-      setFramesSent((n) => n + 1);
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [streamActive, selectedClassId, connected]);
+  const mpStatus = mpReady ? 'MediaPipe pronto' : (mpError || 'Carregando MediaPipe...');
 
   if (availableClasses.length === 0) {
     return (
@@ -184,7 +271,6 @@ export default function RoomCamera() {
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F1F5F9] flex flex-col">
-      {/* Header */}
       <header className="px-6 py-3 bg-[#1B4F81] flex justify-between items-center flex-wrap gap-3">
         <div>
           <h1 className="text-lg font-semibold m-0">foca.ai — Câmera da Sala</h1>
@@ -207,33 +293,27 @@ export default function RoomCamera() {
         <div className="px-6 py-3 bg-red-50 text-red-600 text-sm">{error}</div>
       )}
 
-      {/* Main */}
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 relative bg-black">
-          {/* Hidden capture canvas — NOT flipped, sends raw frame to backend */}
-          <canvas ref={canvasRef} className="hidden" />
-
           <div className="relative w-full h-full">
-            {/* Task 2: Diagnostics HUD — outside the flipped wrapper so text reads normally */}
+            {/* Diagnostics HUD */}
             {streamActive && (
               <div className="absolute top-3 left-3 z-10 bg-black/60 text-white text-xs font-mono rounded-md px-3 py-2 space-y-0.5 pointer-events-none">
                 <div>{connected ? '🟢 Socket conectado' : '🔴 Socket desconectado'}</div>
-                <div>Frames enviados: {framesSent}</div>
-                <div>
-                  {lastResponse
-                    ? `Última resposta: ${Math.max(0, Math.round((now - lastResponse.at) / 1000))}s atrás · ${lastResponse.faceCount} rosto(s)`
-                    : 'Aguardando resposta do servidor...'}
-                </div>
+                <div>{mpReady ? '🟢 MediaPipe pronto' : (mpError ? '🔴 ' + mpError : '🟡 Carregando MediaPipe...')}</div>
+                {aggregate && (
+                  <div>Rostos: {aggregate.total} · Atentos: {aggregate.attentive} · {aggregate.pct}%</div>
+                )}
               </div>
             )}
 
-            {/* Detection badge — big, pulsing cue (like the student camera's live feedback) */}
+            {/* Attention badge */}
             {streamActive && (
               <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
-                {detectedFaces.length > 0 ? (
+                {aggregate ? (
                   <div className="flex items-center gap-2 bg-green-500/90 text-white font-semibold text-sm rounded-full px-4 py-1.5 shadow-lg animate-pulse">
                     <span className="inline-block w-2.5 h-2.5 rounded-full bg-white" />
-                    {detectedFaces.length} rosto(s) detectado(s)
+                    {aggregate.attentive}/{aggregate.total} atentos · {aggregate.pct}%
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 bg-black/60 text-gray-300 text-sm rounded-full px-4 py-1.5">
@@ -244,11 +324,14 @@ export default function RoomCamera() {
               </div>
             )}
 
-            {/* ONE always-mounted video inside the flipped wrapper. The video stays mounted
-                (ref stable) and is hidden via CSS when inactive, so the srcObject assigned in
-                startCamera survives the streamActive toggle (no black screen). Only the VIDEO is
-                flipped here — the overlay is a non-flipped sibling (below) so its TEXT reads
-                normally; drawOverlay mirrors the box x-coords to stay aligned with the flipped video. */}
+            {/* MediaPipe loading indicator (before stream) */}
+            {!streamActive && !mpReady && !mpError && (
+              <div className="absolute top-3 right-3 z-10 bg-yellow-500/80 text-white text-xs rounded-md px-3 py-1.5">
+                Carregando modelo de detecção...
+              </div>
+            )}
+
+            {/* Video — always mounted, CSS-flipped for natural mirror view */}
             <div className="w-full h-full" style={{ transform: 'scaleX(-1)' }}>
               <video
                 ref={videoRef}
@@ -257,49 +340,66 @@ export default function RoomCamera() {
               />
             </div>
 
-            {/* Overlay canvas — NOT flipped (text reads normally); boxes drawn at mirrored x */}
+            {/* Overlay canvas — NOT flipped; box x-coords are mirrored in drawFaceBoxes */}
             {streamActive && (
               <canvas ref={overlayRef} className="absolute inset-0 w-full h-full" />
             )}
 
-            {/* Placeholder when stream is off — outside the flip so icon/text read normally */}
             {!streamActive && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">
                   <svg className="w-12 h-12 mx-auto mb-3 text-[#64748B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                   </svg>
-                  <p className="text-[#64748B] text-sm">Câmera desligada. Clique em "Ligar Câmera" para iniciar.</p>
+                  <p className="text-[#64748B] text-sm">Câmera desligada. Clique em &quot;Ligar Câmera&quot; para iniciar.</p>
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* Sidebar */}
-        <div className="w-[300px] bg-[#1E293B] p-4 border-l border-[#334155] overflow-y-auto">
-          <h3 className="text-base font-semibold mb-1 text-white">Alunos Detectados ({detectedFaces.length})</h3>
-          <p className="text-[#64748B] text-xs mb-4">
-            Se &quot;Frames enviados&quot; sobe mas a resposta fica em 0 rostos, verifique luz, cadastro facial e pesos do detector.
-          </p>
-          {detectedFaces.length === 0 ? (
-            <p className="text-[#64748B] text-xs">Nenhum rosto detectado.</p>
-          ) : (
-            <div className="space-y-2">
-              {detectedFaces.map((face, i) => (
-                <div
-                  key={i}
-                  className="p-3 rounded-lg bg-[#334155] border-l-3"
-                  style={{ borderLeftColor: face.student_id ? '#22C55E' : '#9CA3AF', borderLeftWidth: '3px' }}
-                >
-                  <p className="text-sm font-semibold m-0 mb-0.5 text-white">{face.student_name || 'Não identificado'}</p>
-                  <p className="text-xs text-[#94A3B8] m-0">
-                    {face.student_id ? `Confiança: ${Math.round(face.confidence * 100)}%` : 'Cadastro facial necessário'}
-                  </p>
+        {/* Sidebar — anonymous aggregate panel */}
+        <div className="w-[280px] bg-[#1E293B] p-4 border-l border-[#334155] overflow-y-auto">
+          <h3 className="text-base font-semibold mb-3 text-white">Atenção da Turma</h3>
+          <div className="space-y-3">
+            {aggregate ? (
+              <>
+                <div className="p-3 rounded-lg bg-[#334155]">
+                  <p className="text-2xl font-bold text-white">{aggregate.pct}%</p>
+                  <p className="text-xs text-[#94A3B8]">atenção média</p>
                 </div>
-              ))}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-3 rounded-lg bg-[#334155] text-center">
+                    <p className="text-xl font-bold text-green-400">{aggregate.attentive}</p>
+                    <p className="text-xs text-[#94A3B8]">atentos</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-[#334155] text-center">
+                    <p className="text-xl font-bold text-amber-400">{aggregate.distracted}</p>
+                    <p className="text-xs text-[#94A3B8]">desatentos</p>
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg bg-[#334155]">
+                  <p className="text-xs text-[#94A3B8] mb-1">Total detectado</p>
+                  <p className="text-sm font-semibold text-white">{aggregate.total} rosto(s)</p>
+                </div>
+              </>
+            ) : (
+              <p className="text-[#64748B] text-xs">
+                {streamActive
+                  ? (mpReady ? 'Nenhum rosto detectado.' : mpStatus)
+                  : 'Ligue a câmera para monitorar.'}
+              </p>
+            )}
+            <div className="p-3 rounded-lg bg-[#334155]">
+              <p className="text-xs text-[#94A3B8] mb-1">Modo ativo</p>
+              <p className="text-sm font-semibold text-white capitalize">
+                {(liveClass?.monitoring_mode || 'full_attention').replace(/_/g, ' ')}
+              </p>
             </div>
-          )}
+            <p className="text-[#475569] text-xs mt-2">
+              Detecção anônima — nenhuma imagem sai do navegador.
+            </p>
+          </div>
         </div>
       </div>
     </div>
