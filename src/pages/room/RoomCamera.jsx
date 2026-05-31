@@ -2,11 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import socket from '../../services/socket';
 import api from '../../services/api';
 
-// Thresholds per monitoring mode (degrees)
+// Thresholds per monitoring mode — matches attention-worker.js values
 const MODE_THRESHOLDS = {
-  full_attention: { yaw: 35, pitch_up: 25, pitch_down: 20 },
-  activity:       { yaw: 40, pitch_up: 30, pitch_down: null },
-  exam:           { yaw: 25, pitch_up: 20, pitch_down: null },
+  full_attention: { yaw: 25, pitch_up: 20, pitch_down: 15, ear: 0.20 },
+  activity:       { yaw: 25, pitch_up: 25, pitch_down: null, ear: 0.18 },
+  exam:           { yaw: 20, pitch_up: 20, pitch_down: null, ear: 0.22 },
   break:          null,
 };
 
@@ -25,12 +25,35 @@ function computeHeadPose(m) {
   };
 }
 
-function isDistracted(yaw, pitch, mode) {
+// EAR from 478-landmark model — same indices as attention-worker.js
+function computeEAR(landmarks) {
+  const L = [33, 160, 158, 133, 153, 144];
+  const R = [362, 385, 387, 263, 373, 380];
+  function ear(idx) {
+    const p = idx.map(i => landmarks[i]);
+    if (p.some(x => !x)) return 1.0;
+    const A = Math.hypot(p[1].x - p[5].x, p[1].y - p[5].y);
+    const B = Math.hypot(p[2].x - p[4].x, p[2].y - p[4].y);
+    const C = Math.hypot(p[0].x - p[3].x, p[0].y - p[3].y);
+    return C === 0 ? 1.0 : (A + B) / (2 * C);
+  }
+  return (ear(L) + ear(R)) / 2;
+}
+
+// green ≥75%, amber 50–74%, red <50%
+function pctColor(pct) {
+  if (pct >= 75) return { bg: 'bg-green-500/90', text: 'text-green-400', hex: '#22C55E' };
+  if (pct >= 50) return { bg: 'bg-amber-500/90', text: 'text-amber-400', hex: '#F59E0B' };
+  return { bg: 'bg-red-500/90', text: 'text-red-400', hex: '#EF4444' };
+}
+
+function isDistracted(yaw, pitch, ear, mode) {
   const t = MODE_THRESHOLDS[mode || 'full_attention'];
   if (!t) return false;
   if (Math.abs(yaw) > t.yaw) return true;
   if (t.pitch_up !== null && pitch > t.pitch_up) return true;
   if (t.pitch_down !== null && pitch < -t.pitch_down) return true;
+  if (t.ear !== null && ear < t.ear) return true;
   return false;
 }
 
@@ -52,6 +75,7 @@ export default function RoomCamera() {
   const [mpReady, setMpReady] = useState(false);
   const [mpError, setMpError] = useState('');
   const [aggregate, setAggregate] = useState(null); // { total, attentive, distracted, pct }
+  const [debugPose, setDebugPose] = useState(null); // { yaw, pitch, ear } of first face
 
   useEffect(() => {
     api.get('/api/classes', { params: { status: 'live' } })
@@ -84,12 +108,15 @@ export default function RoomCamera() {
         const fl = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-            delegate: 'GPU',
+            delegate: 'CPU', // GPU is unreliable for facialTransformationMatrixes with numFaces > 1
           },
           outputFaceBlendshapes: false,
           outputFacialTransformationMatrixes: true,
           runningMode: 'VIDEO',
           numFaces: 10,
+          minFaceDetectionConfidence: 0.1,
+          minFacePresenceScore: 0.1,
+          minTrackingConfidence: 0.1,
         });
         if (!cancelled) {
           landmarkerRef.current = fl;
@@ -161,16 +188,21 @@ export default function RoomCamera() {
 
   const processResults = useCallback((results) => {
     const matrices = results.facialTransformationMatrixes || [];
+    const landmarks = results.faceLandmarks || [];
+    // Fallback: if matrices absent but landmarks present, use landmarks count only
+    const faceCount = Math.max(matrices.length, landmarks.length);
     const mode = currentModeRef.current;
     let attentive = 0, distracted = 0;
     const faceBoxes = [];
 
-    matrices.forEach((mat, i) => {
-      const pose = computeHeadPose(mat.data);
-      const dist = isDistracted(pose.yaw, pose.pitch, mode);
+    for (let i = 0; i < faceCount; i++) {
+      const mat = matrices[i];
+      const lms = landmarks[i];
+      const pose = mat ? computeHeadPose(mat.data) : { yaw: 0, pitch: 0, roll: 0 };
+      const ear = lms ? computeEAR(lms) : 1.0;
+      const dist = mat ? isDistracted(pose.yaw, pose.pitch, ear, mode) : false;
       if (dist) distracted++; else attentive++;
 
-      const lms = results.faceLandmarks?.[i];
       if (lms && lms.length > 0) {
         const xs = lms.map(p => p.x);
         const ys = lms.map(p => p.y);
@@ -181,7 +213,14 @@ export default function RoomCamera() {
           distracted: dist,
         });
       }
-    });
+
+      if (i === 0 && mat) {
+        setDebugPose({
+          yaw: pose.yaw.toFixed(1), pitch: pose.pitch.toFixed(1), ear: ear.toFixed(3),
+          lms: landmarks.length, mat: matrices.length,
+        });
+      }
+    }
 
     const total = attentive + distracted;
     const pct = total > 0 ? Math.round(attentive / total * 100) : 0;
@@ -233,7 +272,7 @@ export default function RoomCamera() {
     setError('');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720, facingMode: 'environment' },
+        video: { width: 1280, height: 720 },
         audio: false,
       });
       if (videoRef.current) {
@@ -301,9 +340,8 @@ export default function RoomCamera() {
               <div className="absolute top-3 left-3 z-10 bg-black/60 text-white text-xs font-mono rounded-md px-3 py-2 space-y-0.5 pointer-events-none">
                 <div>{connected ? '🟢 Socket conectado' : '🔴 Socket desconectado'}</div>
                 <div>{mpReady ? '🟢 MediaPipe pronto' : (mpError ? '🔴 ' + mpError : '🟡 Carregando MediaPipe...')}</div>
-                {aggregate && (
-                  <div>Rostos: {aggregate.total} · Atentos: {aggregate.attentive} · {aggregate.pct}%</div>
-                )}
+                {aggregate && <div>Rostos: {aggregate.total} · Atentos: {aggregate.attentive} · {aggregate.pct}%</div>}
+                {debugPose && <div>yaw:{debugPose.yaw}° pitch:{debugPose.pitch}° EAR:{debugPose.ear} | lms:{debugPose.lms} mat:{debugPose.mat}</div>}
               </div>
             )}
 
@@ -311,7 +349,7 @@ export default function RoomCamera() {
             {streamActive && (
               <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
                 {aggregate ? (
-                  <div className="flex items-center gap-2 bg-green-500/90 text-white font-semibold text-sm rounded-full px-4 py-1.5 shadow-lg animate-pulse">
+                  <div className={`flex items-center gap-2 ${pctColor(aggregate.pct).bg} text-white font-semibold text-sm rounded-full px-4 py-1.5 shadow-lg animate-pulse`}>
                     <span className="inline-block w-2.5 h-2.5 rounded-full bg-white" />
                     {aggregate.attentive}/{aggregate.total} atentos · {aggregate.pct}%
                   </div>
@@ -365,7 +403,7 @@ export default function RoomCamera() {
             {aggregate ? (
               <>
                 <div className="p-3 rounded-lg bg-[#334155]">
-                  <p className="text-2xl font-bold text-white">{aggregate.pct}%</p>
+                  <p className={`text-2xl font-bold ${pctColor(aggregate.pct).text}`}>{aggregate.pct}%</p>
                   <p className="text-xs text-[#94A3B8]">atenção média</p>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
