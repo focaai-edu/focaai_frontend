@@ -1,445 +1,481 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import socket from '../../services/socket';
-import api from '../../services/api';
+import { useState, useRef, useEffect } from 'react';
+import Layout from '../../components/Layout';
 
-// Thresholds per monitoring mode — matches attention-worker.js values
-const MODE_THRESHOLDS = {
-  full_attention: { yaw: 25, pitch_up: 20, pitch_down: 15, ear: 0.20 },
-  activity:       { yaw: 25, pitch_up: 25, pitch_down: null, ear: 0.18 },
-  exam:           { yaw: 20, pitch_up: 20, pitch_down: null, ear: 0.22 },
-  break:          null,
+const MODE_LABELS = {
+  full_attention: 'Atenção total',
+  activity: 'Atividade',
+  exam: 'Prova',
+  break: 'Intervalo',
 };
 
-// Copied from attention-worker.js — same empirically verified axis mapping
-function computeHeadPose(m) {
-  if (!m || m.length < 16) return { yaw: 0, pitch: 0, roll: 0 };
-  const m00 = m[0], m10 = m[1], m20 = m[2];
-  const m01 = m[4], m11 = m[5], m21 = m[6];
-  const m02 = m[8], m12 = m[9], m22 = m[10];
-  const RAD2DEG = 180 / Math.PI;
-  const sy = Math.sqrt(m00 * m00 + m10 * m10);
-  return {
-    yaw:   Math.atan2(-m20, sy) * RAD2DEG,
-    pitch: Math.atan2(m21, m22) * RAD2DEG,
-    roll:  Math.atan2(m10, m00) * RAD2DEG,
-  };
+function formatDate(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
-// EAR from 478-landmark model — same indices as attention-worker.js
-function computeEAR(landmarks) {
-  const L = [33, 160, 158, 133, 153, 144];
-  const R = [362, 385, 387, 263, 373, 380];
-  function ear(idx) {
-    const p = idx.map(i => landmarks[i]);
-    if (p.some(x => !x)) return 1.0;
-    const A = Math.hypot(p[1].x - p[5].x, p[1].y - p[5].y);
-    const B = Math.hypot(p[2].x - p[4].x, p[2].y - p[4].y);
-    const C = Math.hypot(p[0].x - p[3].x, p[0].y - p[3].y);
-    return C === 0 ? 1.0 : (A + B) / (2 * C);
-  }
-  return (ear(L) + ear(R)) / 2;
+// Normaliza a URL: garante que termine com /video
+function normalizeStreamUrl(url) {
+  if (!url) return '';
+  const trimmed = url.trim().replace(/\/+$/, '');
+  if (trimmed.endsWith('/video')) return trimmed;
+  return `${trimmed}/video`;
 }
 
-// green ≥75%, amber 50–74%, red <50%
-function pctColor(pct) {
-  if (pct >= 75) return { bg: 'bg-green-500/90', text: 'text-green-400', hex: '#22C55E' };
-  if (pct >= 50) return { bg: 'bg-amber-500/90', text: 'text-amber-400', hex: '#F59E0B' };
-  return { bg: 'bg-red-500/90', text: 'text-red-400', hex: '#EF4444' };
-}
-
-function isDistracted(yaw, pitch, ear, mode) {
-  const t = MODE_THRESHOLDS[mode || 'full_attention'];
-  if (!t) return false;
-  if (Math.abs(yaw) > t.yaw) return true;
-  if (t.pitch_up !== null && pitch > t.pitch_up) return true;
-  if (t.pitch_down !== null && pitch < -t.pitch_down) return true;
-  if (t.ear !== null && ear < t.ear) return true;
-  return false;
-}
-
-export default function RoomCamera() {
-  const videoRef = useRef(null);
-  const overlayRef = useRef(null);
-  const landmarkerRef = useRef(null);
-  const rafRef = useRef(null);
-  const lastDetectRef = useRef(0);
-  const currentModeRef = useRef('full_attention');
-  const selectedClassIdRef = useRef(null);
-
-  const [streamActive, setStreamActive] = useState(false);
-  const [error, setError] = useState('');
-  const [liveClass, setLiveClass] = useState(null);
-  const [availableClasses, setAvailableClasses] = useState([]);
-  const [selectedClassId, setSelectedClassId] = useState(null);
-  const [connected, setConnected] = useState(socket.connected);
-  const [mpReady, setMpReady] = useState(false);
-  const [mpError, setMpError] = useState('');
-  const [aggregate, setAggregate] = useState(null); // { total, attentive, distracted, pct }
-  const [debugPose, setDebugPose] = useState(null); // { yaw, pitch, ear } of first face
+// Componente isolado para o preview MJPEG — monta/desmonta o <img> sozinho
+function MjpegViewer({ url, onLoad, onError }) {
+  const imgRef = useRef(null);
 
   useEffect(() => {
-    api.get('/api/classes', { params: { status: 'live' } })
-      .then(res => {
-        setAvailableClasses(res.data.classes);
-        if (res.data.classes.length > 0) {
-          setSelectedClassId(res.data.classes[0].id);
-          setLiveClass(res.data.classes[0]);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => { selectedClassIdRef.current = selectedClassId; }, [selectedClassId]);
-  useEffect(() => {
-    if (liveClass?.monitoring_mode) currentModeRef.current = liveClass.monitoring_mode;
-  }, [liveClass]);
-
-  // Initialize MediaPipe FaceLandmarker once on mount
-  useEffect(() => {
-    let cancelled = false;
-    async function init() {
-      try {
-        const { FilesetResolver, FaceLandmarker } = await import(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs'
-        );
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
-        );
-        const fl = await FaceLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-            delegate: 'CPU', // GPU is unreliable for facialTransformationMatrixes with numFaces > 1
-          },
-          outputFaceBlendshapes: false,
-          outputFacialTransformationMatrixes: true,
-          runningMode: 'VIDEO',
-          numFaces: 10,
-          minFaceDetectionConfidence: 0.1,
-          minFacePresenceScore: 0.1,
-          minTrackingConfidence: 0.1,
-        });
-        if (!cancelled) {
-          landmarkerRef.current = fl;
-          setMpReady(true);
-        }
-      } catch (err) {
-        if (!cancelled) setMpError('Erro ao carregar MediaPipe: ' + err.message);
-      }
-    }
-    init();
-    return () => {
-      cancelled = true;
-      if (landmarkerRef.current) {
-        landmarkerRef.current.close();
-        landmarkerRef.current = null;
-      }
-    };
-  }, []);
-
-  // Socket connection tracking and auto-join
-  useEffect(() => {
-    const onConnect = () => {
-      setConnected(true);
-      const cid = selectedClassIdRef.current;
-      if (cid) socket.emit('join_class', { class_id: cid });
-    };
-    const onDisconnect = () => setConnected(false);
-    socket.on('connect', onConnect);
-    socket.on('disconnect', onDisconnect);
-    setConnected(socket.connected);
-    return () => {
-      socket.off('connect', onConnect);
-      socket.off('disconnect', onDisconnect);
-    };
-  }, []);
-
-  // Join class room when selected
-  useEffect(() => {
-    if (!selectedClassId) return;
-    if (!socket.connected) socket.connect();
-    else socket.emit('join_class', { class_id: selectedClassId });
-    return () => {
-      socket.emit('leave_class', { class_id: selectedClassId });
-    };
-  }, [selectedClassId]);
-
-  const drawFaceBoxes = useCallback((faceBoxes) => {
-    if (!overlayRef.current || !videoRef.current) return;
-    const overlay = overlayRef.current;
-    const ctx = overlay.getContext('2d');
-    const W = videoRef.current.videoWidth || 1280;
-    const H = videoRef.current.videoHeight || 720;
-    overlay.width = W;
-    overlay.height = H;
-    ctx.clearRect(0, 0, W, H);
-    faceBoxes.forEach(({ x, y, w, h, distracted: dist }) => {
-      const px = x * W, py = y * H, pw = w * W, ph = h * H;
-      const fx = W - px - pw; // mirror x (video is CSS-flipped)
-      const color = dist ? '#F59E0B' : '#22C55E';
-      ctx.save();
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 14;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 4;
-      ctx.strokeRect(fx, py, pw, ph);
-      ctx.restore();
-    });
-  }, []);
-
-  const processResults = useCallback((results) => {
-    const matrices = results.facialTransformationMatrixes || [];
-    const landmarks = results.faceLandmarks || [];
-    // Fallback: if matrices absent but landmarks present, use landmarks count only
-    const faceCount = Math.max(matrices.length, landmarks.length);
-    const mode = currentModeRef.current;
-    let attentive = 0, distracted = 0;
-    const faceBoxes = [];
-
-    for (let i = 0; i < faceCount; i++) {
-      const mat = matrices[i];
-      const lms = landmarks[i];
-      const pose = mat ? computeHeadPose(mat.data) : { yaw: 0, pitch: 0, roll: 0 };
-      const ear = lms ? computeEAR(lms) : 1.0;
-      const dist = mat ? isDistracted(pose.yaw, pose.pitch, ear, mode) : false;
-      if (dist) distracted++; else attentive++;
-
-      if (lms && lms.length > 0) {
-        const xs = lms.map(p => p.x);
-        const ys = lms.map(p => p.y);
-        faceBoxes.push({
-          x: Math.min(...xs), y: Math.min(...ys),
-          w: Math.max(...xs) - Math.min(...xs),
-          h: Math.max(...ys) - Math.min(...ys),
-          distracted: dist,
-        });
-      }
-
-      if (i === 0 && mat) {
-        setDebugPose({
-          yaw: pose.yaw.toFixed(1), pitch: pose.pitch.toFixed(1), ear: ear.toFixed(3),
-          lms: landmarks.length, mat: matrices.length,
-        });
-      }
-    }
-
-    const total = attentive + distracted;
-    const pct = total > 0 ? Math.round(attentive / total * 100) : 0;
-    setAggregate(total > 0 ? { total, attentive, distracted, pct } : null);
-    drawFaceBoxes(faceBoxes);
-
-    const cid = selectedClassIdRef.current;
-    if (cid && total > 0) {
-      socket.emit('room_attention', {
-        class_id: cid,
-        total_faces: total,
-        attentive,
-        distracted,
-        attention_pct: pct,
-        monitoring_mode: mode,
-      });
-    }
-  }, [drawFaceBoxes]);
-
-  // Detection loop — runs at 2 FPS (500ms throttle) via rAF
-  useEffect(() => {
-    if (!streamActive || !mpReady) return;
-    const INTERVAL = 500;
-    function detect(now) {
-      rafRef.current = requestAnimationFrame(detect);
-      if (now - lastDetectRef.current < INTERVAL) return;
-      lastDetectRef.current = now;
-      const video = videoRef.current;
-      if (!video || video.readyState < 2 || !landmarkerRef.current) return;
-      try {
-        const results = landmarkerRef.current.detectForVideo(video, now);
-        processResults(results);
-      } catch (e) {
-        // ignore occasional detectForVideo errors during stream start/stop
-      }
-    }
-    rafRef.current = requestAnimationFrame(detect);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      setAggregate(null);
-      if (overlayRef.current) {
-        const ctx = overlayRef.current.getContext('2d');
-        ctx.clearRect(0, 0, overlayRef.current.width, overlayRef.current.height);
-      }
-    };
-  }, [streamActive, mpReady, processResults]);
-
-  const startCamera = useCallback(async () => {
-    setError('');
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720 },
-        audio: false,
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      setStreamActive(true);
-    } catch (err) {
-      if (err.name === 'NotAllowedError') setError('Permissão de câmera negada.');
-      else if (err.name === 'NotFoundError') setError('Nenhuma câmera encontrada.');
-      else setError('Erro ao acessar câmera: ' + err.message);
-    }
-  }, []);
-
-  const stopCamera = useCallback(() => {
-    if (videoRef.current?.srcObject) {
-      videoRef.current.srcObject.getTracks().forEach(t => t.stop());
-      videoRef.current.srcObject = null;
-    }
-    setStreamActive(false);
-  }, []);
-
-  useEffect(() => () => stopCamera(), [stopCamera]);
-
-  const mpStatus = mpReady ? 'MediaPipe pronto' : (mpError || 'Carregando MediaPipe...');
-
-  if (availableClasses.length === 0) {
-    return (
-      <div className="min-h-screen bg-[#F1F5F9] flex flex-col items-center justify-center p-8 text-center">
-        <h1 className="text-2xl font-bold text-[#1B4F81] mb-2">foca.ai — Câmera da Sala</h1>
-        <p className="text-gray-500 text-sm">Nenhuma aula ao vivo. Inicie uma aula no Dashboard do Professor primeiro.</p>
-      </div>
-    );
-  }
+    const img = imgRef.current;
+    if (!img) return;
+    // Força reload adicionando timestamp para evitar cache
+    img.src = `${url}?t=${Date.now()}`;
+  }, [url]);
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-[#F1F5F9] flex flex-col">
-      <header className="px-6 py-3 bg-[#1B4F81] flex justify-between items-center flex-wrap gap-3">
-        <div>
-          <h1 className="text-lg font-semibold m-0">foca.ai — Câmera da Sala</h1>
-          {liveClass && <span className="text-xs opacity-80">Aula: {liveClass.title}</span>}
+    <img
+      ref={imgRef}
+      alt="Stream da câmera"
+      onLoad={onLoad}
+      onError={onError}
+      className="w-full h-full object-contain"
+      style={{ display: 'block' }}
+    />
+  );
+}
+
+// Modal de visualização da câmera
+function CameraViewerModal({ camera, onClose }) {
+  const [status, setStatus] = useState('loading'); // 'loading' | 'ok' | 'error'
+  const streamUrl = normalizeStreamUrl(camera.stream_url);
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/80 z-[1000] flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-[#0F172A] rounded-2xl overflow-hidden w-full max-w-3xl shadow-2xl flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 bg-[#1E293B] border-b border-[#334155]">
+          <div>
+            <p className="text-sm font-semibold text-[#F1F5F9]">{camera.name}</p>
+            {camera.location && (
+              <p className="text-xs text-[#64748B]">{camera.location}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Status badge */}
+            {status === 'loading' && (
+              <span className="flex items-center gap-1.5 text-xs text-amber-400">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                Conectando...
+              </span>
+            )}
+            {status === 'ok' && (
+              <span className="flex items-center gap-1.5 text-xs text-green-400">
+                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                Ao vivo
+              </span>
+            )}
+            {status === 'error' && (
+              <span className="flex items-center gap-1.5 text-xs text-red-400">
+                <span className="w-2 h-2 rounded-full bg-red-400" />
+                Indisponível
+              </span>
+            )}
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-[#64748B] hover:text-[#94A3B8] hover:bg-[#334155] transition-colors border-none bg-transparent cursor-pointer"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
-        <div className="flex gap-2 items-center">
-          {!streamActive ? (
-            <button onClick={startCamera} className="px-4 py-2 rounded-lg bg-green-500 text-white font-semibold text-sm hover:bg-green-600 transition-colors">
-              Ligar Câmera
-            </button>
-          ) : (
-            <button onClick={stopCamera} className="px-4 py-2 rounded-lg bg-red-500 text-white font-semibold text-sm hover:bg-red-600 transition-colors">
-              Desligar
-            </button>
+
+        {/* Viewer */}
+        <div className="relative bg-black" style={{ aspectRatio: '16/9' }}>
+          {/* Sem URL cadastrada */}
+          {!streamUrl && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+              <svg className="w-10 h-10 text-[#475569]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <p className="text-[#475569] text-sm">Nenhuma URL configurada para esta câmera.</p>
+            </div>
+          )}
+
+          {/* Overlay de loading */}
+          {streamUrl && status === 'loading' && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10 pointer-events-none">
+              <div className="w-8 h-8 border-2 border-[#4A90D9] border-t-transparent rounded-full animate-spin" />
+              <p className="text-[#64748B] text-sm">Conectando à câmera...</p>
+            </div>
+          )}
+
+          {/* Overlay de erro */}
+          {streamUrl && status === 'error' && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10">
+              <div className="w-12 h-12 rounded-xl bg-red-900/30 flex items-center justify-center">
+                <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+              </div>
+              <p className="text-[#F1F5F9] text-sm font-semibold">Câmera indisponível</p>
+              <p className="text-[#64748B] text-xs text-center max-w-xs">
+                Não foi possível conectar ao stream. Verifique se o DroidCam está ativo e a URL está correta.
+              </p>
+              <p className="text-[#334155] text-xs font-mono mt-1">{streamUrl}</p>
+            </div>
+          )}
+
+          {/* Stream MJPEG */}
+          {streamUrl && (
+            <MjpegViewer
+              url={streamUrl}
+              onLoad={() => setStatus('ok')}
+              onError={() => setStatus('error')}
+            />
           )}
         </div>
-      </header>
 
-      {error && (
-        <div className="px-6 py-3 bg-red-50 text-red-600 text-sm">{error}</div>
-      )}
-
-      <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 relative bg-black">
-          <div className="relative w-full h-full">
-            {/* Diagnostics HUD */}
-            {streamActive && (
-              <div className="absolute top-3 left-3 z-10 bg-black/60 text-white text-xs font-mono rounded-md px-3 py-2 space-y-0.5 pointer-events-none">
-                <div>{connected ? '🟢 Socket conectado' : '🔴 Socket desconectado'}</div>
-                <div>{mpReady ? '🟢 MediaPipe pronto' : (mpError ? '🔴 ' + mpError : '🟡 Carregando MediaPipe...')}</div>
-                {aggregate && <div>Rostos: {aggregate.total} · Atentos: {aggregate.attentive} · {aggregate.pct}%</div>}
-                {debugPose && <div>yaw:{debugPose.yaw}° pitch:{debugPose.pitch}° EAR:{debugPose.ear} | lms:{debugPose.lms} mat:{debugPose.mat}</div>}
-              </div>
-            )}
-
-            {/* Attention badge */}
-            {streamActive && (
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
-                {aggregate ? (
-                  <div className={`flex items-center gap-2 ${pctColor(aggregate.pct).bg} text-white font-semibold text-sm rounded-full px-4 py-1.5 shadow-lg animate-pulse`}>
-                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-white" />
-                    {aggregate.attentive}/{aggregate.total} atentos · {aggregate.pct}%
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 bg-black/60 text-gray-300 text-sm rounded-full px-4 py-1.5">
-                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-400" />
-                    Procurando rostos...
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* MediaPipe loading indicator (before stream) */}
-            {!streamActive && !mpReady && !mpError && (
-              <div className="absolute top-3 right-3 z-10 bg-yellow-500/80 text-white text-xs rounded-md px-3 py-1.5">
-                Carregando modelo de detecção...
-              </div>
-            )}
-
-            {/* Video — always mounted, CSS-flipped for natural mirror view */}
-            <div className="w-full h-full" style={{ transform: 'scaleX(-1)' }}>
-              <video
-                ref={videoRef}
-                className={streamActive ? 'w-full h-full object-contain' : 'hidden'}
-                playsInline muted autoPlay
-              />
-            </div>
-
-            {/* Overlay canvas — NOT flipped; box x-coords are mirrored in drawFaceBoxes */}
-            {streamActive && (
-              <canvas ref={overlayRef} className="absolute inset-0 w-full h-full" />
-            )}
-
-            {!streamActive && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-center">
-                  <svg className="w-12 h-12 mx-auto mb-3 text-[#64748B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                  <p className="text-[#64748B] text-sm">Câmera desligada. Clique em &quot;Ligar Câmera&quot; para iniciar.</p>
-                </div>
-              </div>
-            )}
+        {/* Footer com URL */}
+        {streamUrl && (
+          <div className="px-5 py-2.5 border-t border-[#334155] flex items-center gap-2">
+            <svg className="w-3.5 h-3.5 text-[#475569] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            <span className="text-xs text-[#475569] font-mono truncate">{streamUrl}</span>
           </div>
-        </div>
-
-        {/* Sidebar — anonymous aggregate panel */}
-        <div className="w-[280px] bg-[#1E293B] p-4 border-l border-[#334155] overflow-y-auto">
-          <h3 className="text-base font-semibold mb-3 text-white">Atenção da Turma</h3>
-          <div className="space-y-3">
-            {aggregate ? (
-              <>
-                <div className="p-3 rounded-lg bg-[#334155]">
-                  <p className={`text-2xl font-bold ${pctColor(aggregate.pct).text}`}>{aggregate.pct}%</p>
-                  <p className="text-xs text-[#94A3B8]">atenção média</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="p-3 rounded-lg bg-[#334155] text-center">
-                    <p className="text-xl font-bold text-green-400">{aggregate.attentive}</p>
-                    <p className="text-xs text-[#94A3B8]">atentos</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-[#334155] text-center">
-                    <p className="text-xl font-bold text-amber-400">{aggregate.distracted}</p>
-                    <p className="text-xs text-[#94A3B8]">desatentos</p>
-                  </div>
-                </div>
-                <div className="p-3 rounded-lg bg-[#334155]">
-                  <p className="text-xs text-[#94A3B8] mb-1">Total detectado</p>
-                  <p className="text-sm font-semibold text-white">{aggregate.total} rosto(s)</p>
-                </div>
-              </>
-            ) : (
-              <p className="text-[#64748B] text-xs">
-                {streamActive
-                  ? (mpReady ? 'Nenhum rosto detectado.' : mpStatus)
-                  : 'Ligue a câmera para monitorar.'}
-              </p>
-            )}
-            <div className="p-3 rounded-lg bg-[#334155]">
-              <p className="text-xs text-[#94A3B8] mb-1">Modo ativo</p>
-              <p className="text-sm font-semibold text-white capitalize">
-                {(liveClass?.monitoring_mode || 'full_attention').replace(/_/g, ' ')}
-              </p>
-            </div>
-            <p className="text-[#475569] text-xs mt-2">
-              Detecção anônima — nenhuma imagem sai do navegador.
-            </p>
-          </div>
-        </div>
+        )}
       </div>
     </div>
+  );
+}
+
+export default function CameraManager() {
+  const [cameras, setCameras] = useState([]);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingCamera, setEditingCamera] = useState(null);
+  const [viewingCamera, setViewingCamera] = useState(null);
+  const [error, setError] = useState('');
+
+  // Form state
+  const [name, setName] = useState('');
+  const [location, setLocation] = useState('');
+  const [streamUrl, setStreamUrl] = useState('');
+  const [defaultMode, setDefaultMode] = useState('full_attention');
+
+  const resetForm = () => {
+    setName('');
+    setLocation('');
+    setStreamUrl('');
+    setDefaultMode('full_attention');
+    setError('');
+  };
+
+  const openCreate = () => {
+    resetForm();
+    setEditingCamera(null);
+    setShowCreate(true);
+  };
+
+  const openEdit = (cam) => {
+    setName(cam.name);
+    setLocation(cam.location || '');
+    setStreamUrl(cam.stream_url || '');
+    setDefaultMode(cam.default_mode || 'full_attention');
+    setError('');
+    setEditingCamera(cam);
+    setShowCreate(true);
+  };
+
+  const closeModal = () => {
+    setShowCreate(false);
+    setEditingCamera(null);
+    resetForm();
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!name.trim()) {
+      setError('Nome da câmera é obrigatório.');
+      return;
+    }
+
+    const payload = {
+      name: name.trim(),
+      location: location.trim(),
+      stream_url: streamUrl.trim(),
+      default_mode: defaultMode,
+      created_at: new Date().toISOString(),
+    };
+
+    if (editingCamera) {
+      setCameras((prev) =>
+        prev.map((cam) =>
+          cam.id === editingCamera.id ? { ...cam, ...payload } : cam
+        )
+      );
+    } else {
+      const newCamera = { ...payload, id: crypto.randomUUID() };
+      setCameras((prev) => [...prev, newCamera]);
+    }
+
+    closeModal();
+  };
+
+  const handleDelete = (id) => {
+    if (!window.confirm('Remover esta câmera?')) return;
+    setCameras((prev) => prev.filter((cam) => cam.id !== id));
+  };
+
+  return (
+    <Layout role="teacher">
+      {/* Page header */}
+      <div className="flex justify-between items-start mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-[#F1F5F9] m-0 mb-1">
+            Minhas Câmeras
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-[#64748B] m-0">
+            {cameras.length} câmera{cameras.length !== 1 ? 's' : ''} configurada{cameras.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <button
+          onClick={openCreate}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#1B4F81] text-white font-semibold text-sm hover:bg-[#164572] transition-colors shadow-sm"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Adicionar câmera
+        </button>
+      </div>
+
+      {error && !showCreate && (
+        <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Camera list */}
+      {cameras.length === 0 ? (
+        <div className="py-20 text-center">
+          <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-[#1E293B] flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6 text-gray-400 dark:text-[#475569]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <p className="text-gray-700 dark:text-[#CBD5E1] font-medium text-sm mb-1">
+            Nenhuma câmera configurada
+          </p>
+          <p className="text-gray-400 dark:text-[#475569] text-xs mb-4">
+            Adicione a câmera da sua sala para monitorar a atenção da turma.
+          </p>
+          <button
+            onClick={openCreate}
+            className="px-4 py-2 rounded-lg bg-[#1B4F81] text-white text-sm font-semibold hover:bg-[#164572] transition-colors"
+          >
+            + Adicionar câmera
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {cameras.map((cam) => (
+            <div
+              key={cam.id}
+              className="group bg-white dark:bg-[#1E293B] rounded-xl border border-gray-200 dark:border-[#334155] px-5 py-4 flex items-center gap-4 hover:border-[#4A90D9]/40 hover:shadow-sm transition-all cursor-pointer"
+              onClick={() => setViewingCamera(cam)}
+            >
+              {/* Icon */}
+              <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-gray-100 dark:bg-[#334155] flex items-center justify-center">
+                <svg className="w-5 h-5 text-gray-500 dark:text-[#94A3B8]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </div>
+
+              {/* Info */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-semibold text-gray-900 dark:text-[#F1F5F9] truncate">
+                    {cam.name}
+                  </span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 dark:bg-[#334155] text-gray-500 dark:text-[#94A3B8]">
+                    {MODE_LABELS[cam.default_mode] || cam.default_mode}
+                  </span>
+                </div>
+                {cam.location && (
+                  <p className="text-xs text-gray-400 dark:text-[#475569] mt-0.5 truncate">
+                    {cam.location}
+                  </p>
+                )}
+                {cam.stream_url && (
+                  <p className="text-xs text-gray-400 dark:text-[#475569] mt-0.5 truncate font-mono">
+                    {normalizeStreamUrl(cam.stream_url)}
+                  </p>
+                )}
+                <p className="text-xs text-gray-400 dark:text-[#475569] mt-0.5">
+                  Adicionada em {formatDate(cam.created_at)}
+                </p>
+              </div>
+
+              {/* Actions — stopPropagation para não abrir o viewer ao clicar nos botões */}
+              <div className="flex gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => openEdit(cam)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-[#334155] text-gray-600 dark:text-[#94A3B8] text-xs font-semibold hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z" />
+                  </svg>
+                  Editar
+                </button>
+                <button
+                  onClick={() => handleDelete(cam.id)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-900/40 text-red-500 text-xs font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m2 0a1 1 0 00-1-1h-4a1 1 0 00-1 1m6 0H7" />
+                  </svg>
+                  Remover
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Camera viewer modal */}
+      {viewingCamera && (
+        <CameraViewerModal
+          camera={viewingCamera}
+          onClose={() => setViewingCamera(null)}
+        />
+      )}
+
+      {/* Create / Edit Modal */}
+      {showCreate && (
+        <div
+          className="fixed inset-0 bg-black/40 z-[1000] flex items-center justify-center p-4"
+          onClick={closeModal}
+        >
+          <div
+            className="bg-white dark:bg-[#1E293B] rounded-2xl p-6 max-w-md w-full shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-[#F1F5F9]">
+                {editingCamera ? 'Editar câmera' : 'Adicionar câmera'}
+              </h2>
+              <button
+                onClick={closeModal}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 dark:text-[#64748B] hover:text-gray-600 dark:hover:text-[#94A3B8] hover:bg-gray-100 dark:hover:bg-[#334155] transition-colors border-none bg-transparent cursor-pointer"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="cam-name" className="block text-sm font-medium text-gray-700 dark:text-[#CBD5E1] mb-1.5">
+                  Nome da câmera <span className="text-red-400">*</span>
+                </label>
+                <input
+                  id="cam-name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Ex: Câmera — Sala A02"
+                  autoFocus
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 dark:border-[#334155] bg-white dark:bg-[#0F172A] text-gray-900 dark:text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9] placeholder-gray-400 dark:placeholder-[#475569]"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="cam-location" className="block text-sm font-medium text-gray-700 dark:text-[#CBD5E1] mb-1.5">
+                  Localização <span className="text-gray-400 font-normal">(opcional)</span>
+                </label>
+                <input
+                  id="cam-location"
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="Ex: Bloco A, 1º andar"
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 dark:border-[#334155] bg-white dark:bg-[#0F172A] text-gray-900 dark:text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9] placeholder-gray-400 dark:placeholder-[#475569]"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="cam-url" className="block text-sm font-medium text-gray-700 dark:text-[#CBD5E1] mb-1.5">
+                  URL do stream <span className="text-gray-400 font-normal">(ex: http://192.168.x.x:4747)</span>
+                </label>
+                <input
+                  id="cam-url"
+                  type="text"
+                  value={streamUrl}
+                  onChange={(e) => setStreamUrl(e.target.value)}
+                  placeholder="http://192.168.x.x:4747"
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 dark:border-[#334155] bg-white dark:bg-[#0F172A] text-gray-900 dark:text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9] placeholder-gray-400 dark:placeholder-[#475569] font-mono"
+                />
+                <p className="text-xs text-gray-400 dark:text-[#475569] mt-1">
+                  O <span className="font-mono">/video</span> será adicionado automaticamente se necessário.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="cam-mode" className="block text-sm font-medium text-gray-700 dark:text-[#CBD5E1] mb-1.5">
+                  Modo padrão de monitoramento
+                </label>
+                <select
+                  id="cam-mode"
+                  value={defaultMode}
+                  onChange={(e) => setDefaultMode(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 dark:border-[#334155] bg-white dark:bg-[#0F172A] text-gray-900 dark:text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9]"
+                >
+                  {Object.entries(MODE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="px-4 py-2 rounded-lg border border-gray-200 dark:border-[#334155] text-gray-600 dark:text-[#94A3B8] text-sm font-medium cursor-pointer hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors bg-transparent"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-[#1B4F81] text-white text-sm font-semibold hover:bg-[#164572] transition-colors"
+                >
+                  {editingCamera ? 'Salvar alterações' : 'Adicionar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </Layout>
   );
 }
