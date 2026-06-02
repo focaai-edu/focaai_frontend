@@ -1,5 +1,18 @@
-import { useState, useRef, useEffect } from 'react';
-import Layout from '../../components/Layout';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import socket from '../../services/socket';
+import api from '../../services/api';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const LS_CAMERAS_KEY = 'foca_cameras';
+const LS_ACTIVE_KEY  = 'foca_active_camera_id';
+
+const MODE_THRESHOLDS = {
+  full_attention: { yaw: 25, pitch_up: 20, pitch_down: 15, ear: 0.20 },
+  activity:       { yaw: 25, pitch_up: 25, pitch_down: null, ear: 0.18 },
+  exam:           { yaw: 20, pitch_up: 20, pitch_down: null, ear: 0.22 },
+  break:          null,
+};
 
 const MODE_LABELS = {
   full_attention: 'Atenção total',
@@ -8,379 +21,752 @@ const MODE_LABELS = {
   break: 'Intervalo',
 };
 
-function formatDate(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Normaliza a URL: garante que termine com /video
+function loadCameras() {
+  try { return JSON.parse(localStorage.getItem(LS_CAMERAS_KEY) || '[]'); }
+  catch { return []; }
+}
+function saveCameras(cameras) {
+  localStorage.setItem(LS_CAMERAS_KEY, JSON.stringify(cameras));
+}
 function normalizeStreamUrl(url) {
   if (!url) return '';
-  const trimmed = url.trim().replace(/\/+$/, '');
-  if (trimmed.endsWith('/video')) return trimmed;
-  return `${trimmed}/video`;
+  let s = url.trim().replace(/\/+$/, '');
+  if (!s.startsWith('http://') && !s.startsWith('https://')) s = `http://${s}`;
+  if (s.endsWith('/video')) return s;
+  return `${s}/video`;
 }
 
-// Componente isolado para o preview MJPEG — monta/desmonta o <img> sozinho
-function MjpegViewer({ url, onLoad, onError }) {
-  const imgRef = useRef(null);
-
-  useEffect(() => {
-    const img = imgRef.current;
-    if (!img) return;
-    // Força reload adicionando timestamp para evitar cache
-    img.src = `${url}?t=${Date.now()}`;
-  }, [url]);
-
-  return (
-    <img
-      ref={imgRef}
-      alt="Stream da câmera"
-      onLoad={onLoad}
-      onError={onError}
-      className="w-full h-full object-contain"
-      style={{ display: 'block' }}
-    />
-  );
+function computeHeadPose(m) {
+  if (!m || m.length < 16) return { yaw: 0, pitch: 0, roll: 0 };
+  const RAD2DEG = 180 / Math.PI;
+  const sy = Math.sqrt(m[0] * m[0] + m[1] * m[1]);
+  return {
+    yaw:   Math.atan2(-m[2], sy) * RAD2DEG,
+    pitch: Math.atan2(m[6], m[10]) * RAD2DEG,
+    roll:  Math.atan2(m[1], m[0]) * RAD2DEG,
+  };
 }
 
-// Modal de visualização da câmera
-function CameraViewerModal({ camera, onClose }) {
-  const [status, setStatus] = useState('loading'); // 'loading' | 'ok' | 'error'
-  const streamUrl = normalizeStreamUrl(camera.stream_url);
+function computeEAR(landmarks) {
+  const L = [33, 160, 158, 133, 153, 144];
+  const R = [362, 385, 387, 263, 373, 380];
+  function ear(idx) {
+    const p = idx.map(i => landmarks[i]);
+    if (p.some(x => !x)) return 1.0;
+    const A = Math.hypot(p[1].x - p[5].x, p[1].y - p[5].y);
+    const B = Math.hypot(p[2].x - p[4].x, p[2].y - p[4].y);
+    const C = Math.hypot(p[0].x - p[3].x, p[0].y - p[3].y);
+    return C === 0 ? 1.0 : (A + B) / (2 * C);
+  }
+  return (ear(L) + ear(R)) / 2;
+}
+
+function isDistracted(yaw, pitch, ear, mode) {
+  const t = MODE_THRESHOLDS[mode || 'full_attention'];
+  if (!t) return false;
+  if (Math.abs(yaw) > t.yaw) return true;
+  if (t.pitch_up !== null && pitch > t.pitch_up) return true;
+  if (t.pitch_down !== null && pitch < -t.pitch_down) return true;
+  if (t.ear !== null && ear < t.ear) return true;
+  return false;
+}
+
+function pctColor(pct) {
+  if (pct >= 75) return { text: 'text-green-400', hex: '#22C55E', bg: 'bg-green-500/90' };
+  if (pct >= 50) return { text: 'text-amber-400', hex: '#F59E0B', bg: 'bg-amber-500/90' };
+  return { text: 'text-red-400', hex: '#EF4444', bg: 'bg-red-500/90' };
+}
+
+// ── Camera Form Modal ─────────────────────────────────────────────────────────
+
+function CameraFormModal({ camera, onSave, onClose }) {
+  const [name, setName]       = useState(camera?.name || '');
+  const [location, setLoc]    = useState(camera?.location || '');
+  const [type, setType]       = useState(camera?.stream_url === '__webcam__' ? 'webcam' : 'mjpeg');
+  const [streamUrl, setUrl]   = useState(camera?.stream_url === '__webcam__' ? '' : (camera?.stream_url || ''));
+  const [mode, setMode]       = useState(camera?.default_mode || 'full_attention');
+  const [error, setError]     = useState('');
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!name.trim()) { setError('Nome obrigatório.'); return; }
+    if (type === 'mjpeg' && !streamUrl.trim()) { setError('URL do stream obrigatória para câmera IP.'); return; }
+    onSave({
+      name: name.trim(),
+      location: location.trim(),
+      stream_url: type === 'webcam' ? '__webcam__' : streamUrl.trim(),
+      default_mode: mode,
+    });
+  };
 
   return (
-    <div
-      className="fixed inset-0 bg-black/80 z-[1000] flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-[#0F172A] rounded-2xl overflow-hidden w-full max-w-3xl shadow-2xl flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 bg-[#1E293B] border-b border-[#334155]">
+    <div className="fixed inset-0 bg-black/60 z-[1000] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[#1E293B] rounded-2xl p-6 max-w-md w-full shadow-xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-semibold text-[#F1F5F9]">
+            {camera ? 'Editar câmera' : 'Adicionar câmera'}
+          </h2>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-[#64748B] hover:bg-[#334155] transition-colors border-none bg-transparent cursor-pointer">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {error && <div className="mb-4 p-3 rounded-lg bg-red-900/20 text-red-400 text-sm">{error}</div>}
+
+        <form onSubmit={submit} className="space-y-4">
           <div>
-            <p className="text-sm font-semibold text-[#F1F5F9]">{camera.name}</p>
-            {camera.location && (
-              <p className="text-xs text-[#64748B]">{camera.location}</p>
-            )}
+            <label className="block text-sm font-medium text-[#CBD5E1] mb-1.5">Nome *</label>
+            <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Câmera — Sala A02"
+              className="w-full px-3.5 py-2.5 rounded-lg border border-[#334155] bg-[#0F172A] text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9] placeholder-[#475569]" />
           </div>
-          <div className="flex items-center gap-3">
-            {/* Status badge */}
-            {status === 'loading' && (
-              <span className="flex items-center gap-1.5 text-xs text-amber-400">
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                Conectando...
-              </span>
-            )}
-            {status === 'ok' && (
-              <span className="flex items-center gap-1.5 text-xs text-green-400">
-                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                Ao vivo
-              </span>
-            )}
-            {status === 'error' && (
-              <span className="flex items-center gap-1.5 text-xs text-red-400">
-                <span className="w-2 h-2 rounded-full bg-red-400" />
-                Indisponível
-              </span>
-            )}
-            <button
-              onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-lg text-[#64748B] hover:text-[#94A3B8] hover:bg-[#334155] transition-colors border-none bg-transparent cursor-pointer"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+          <div>
+            <label className="block text-sm font-medium text-[#CBD5E1] mb-1.5">Localização <span className="text-[#475569] font-normal">(opcional)</span></label>
+            <input value={location} onChange={e => setLoc(e.target.value)} placeholder="Ex: Bloco A, 1º andar"
+              className="w-full px-3.5 py-2.5 rounded-lg border border-[#334155] bg-[#0F172A] text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9] placeholder-[#475569]" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#CBD5E1] mb-2">Tipo de fonte</label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { value: 'mjpeg', label: 'Câmera IP / MJPEG', icon: '📡' },
+                { value: 'webcam', label: 'Webcam do computador', icon: '💻' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setType(opt.value)}
+                  className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+                    type === opt.value
+                      ? 'border-[#4A90D9] bg-[#4A90D9]/10 text-[#7DB8F0]'
+                      : 'border-[#334155] bg-transparent text-[#64748B] hover:bg-[#334155]'
+                  }`}
+                >
+                  <span className="text-base">{opt.icon}</span>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {type === 'mjpeg' && (
+            <div>
+              <label className="block text-sm font-medium text-[#CBD5E1] mb-1.5">
+                URL do stream <span className="text-[#475569] font-normal">(ex: 192.168.x.x:4747)</span>
+              </label>
+              <input value={streamUrl} onChange={e => setUrl(e.target.value)} placeholder="192.168.x.x:4747"
+                className="w-full px-3.5 py-2.5 rounded-lg border border-[#334155] bg-[#0F172A] text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9] placeholder-[#475569] font-mono" />
+              <p className="text-xs text-[#475569] mt-1">O <span className="font-mono">http://</span> e <span className="font-mono">/video</span> são adicionados automaticamente.</p>
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-[#CBD5E1] mb-1.5">Modo padrão</label>
+            <select value={mode} onChange={e => setMode(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-lg border border-[#334155] bg-[#0F172A] text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9]">
+              {Object.entries(MODE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div className="flex gap-2 justify-end pt-1">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 rounded-lg border border-[#334155] text-[#94A3B8] text-sm font-medium cursor-pointer hover:bg-[#334155] transition-colors bg-transparent">
+              Cancelar
+            </button>
+            <button type="submit"
+              className="px-4 py-2 rounded-lg bg-[#1B4F81] text-white text-sm font-semibold hover:bg-[#164572] transition-colors">
+              {camera ? 'Salvar' : 'Adicionar'}
             </button>
           </div>
-        </div>
-
-        {/* Viewer */}
-        <div className="relative bg-black" style={{ aspectRatio: '16/9' }}>
-          {/* Sem URL cadastrada */}
-          {!streamUrl && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-              <svg className="w-10 h-10 text-[#475569]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              <p className="text-[#475569] text-sm">Nenhuma URL configurada para esta câmera.</p>
-            </div>
-          )}
-
-          {/* Overlay de loading */}
-          {streamUrl && status === 'loading' && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10 pointer-events-none">
-              <div className="w-8 h-8 border-2 border-[#4A90D9] border-t-transparent rounded-full animate-spin" />
-              <p className="text-[#64748B] text-sm">Conectando à câmera...</p>
-            </div>
-          )}
-
-          {/* Overlay de erro */}
-          {streamUrl && status === 'error' && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10">
-              <div className="w-12 h-12 rounded-xl bg-red-900/30 flex items-center justify-center">
-                <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                </svg>
-              </div>
-              <p className="text-[#F1F5F9] text-sm font-semibold">Câmera indisponível</p>
-              <p className="text-[#64748B] text-xs text-center max-w-xs">
-                Não foi possível conectar ao stream. Verifique se o DroidCam está ativo e a URL está correta.
-              </p>
-              <p className="text-[#334155] text-xs font-mono mt-1">{streamUrl}</p>
-            </div>
-          )}
-
-          {/* Stream MJPEG */}
-          {streamUrl && (
-            <MjpegViewer
-              url={streamUrl}
-              onLoad={() => setStatus('ok')}
-              onError={() => setStatus('error')}
-            />
-          )}
-        </div>
-
-        {/* Footer com URL */}
-        {streamUrl && (
-          <div className="px-5 py-2.5 border-t border-[#334155] flex items-center gap-2">
-            <svg className="w-3.5 h-3.5 text-[#475569] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-            </svg>
-            <span className="text-xs text-[#475569] font-mono truncate">{streamUrl}</span>
-          </div>
-        )}
+        </form>
       </div>
     </div>
   );
 }
 
-export default function CameraManager() {
-  const [cameras, setCameras] = useState([]);
-  const [showCreate, setShowCreate] = useState(false);
-  const [editingCamera, setEditingCamera] = useState(null);
-  const [viewingCamera, setViewingCamera] = useState(null);
-  const [error, setError] = useState('');
+// ── Main Component ────────────────────────────────────────────────────────────
 
-  // Form state
-  const [name, setName] = useState('');
-  const [location, setLocation] = useState('');
-  const [streamUrl, setStreamUrl] = useState('');
-  const [defaultMode, setDefaultMode] = useState('full_attention');
+export default function RoomCamera() {
+  // Camera config (localStorage)
+  const [cameras, setCameras]           = useState(loadCameras);
+  const [activeCameraId, setActiveCamId] = useState(() => localStorage.getItem(LS_ACTIVE_KEY) || null);
+  const [showForm, setShowForm]         = useState(false);
+  const [editingCam, setEditingCam]     = useState(null);
 
-  const resetForm = () => {
-    setName('');
-    setLocation('');
-    setStreamUrl('');
-    setDefaultMode('full_attention');
-    setError('');
-  };
+  // Class / socket
+  const [availableClasses, setAvailableClasses] = useState([]);
+  const [selectedClassId, setSelectedClassId]   = useState(null);
+  const [liveClass, setLiveClass]               = useState(null);
+  const [connected, setConnected]               = useState(socket.connected);
 
-  const openCreate = () => {
-    resetForm();
-    setEditingCamera(null);
-    setShowCreate(true);
-  };
+  // Monitoring
+  const [monitoring, setMonitoring] = useState(false);
+  const [mpReady, setMpReady]       = useState(false);
+  const [mpError, setMpError]       = useState('');
+  const [streamOk, setStreamOk]     = useState(false);
+  const [aggregate, setAggregate]   = useState(null);
+  const [debugPose, setDebugPose]   = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [transcriptions, setTranscriptions] = useState([]);
+  const [micActive, setMicActive] = useState(false);
 
-  const openEdit = (cam) => {
-    setName(cam.name);
-    setLocation(cam.location || '');
-    setStreamUrl(cam.stream_url || '');
-    setDefaultMode(cam.default_mode || 'full_attention');
-    setError('');
-    setEditingCamera(cam);
-    setShowCreate(true);
-  };
+  // Refs
+  const imgRef        = useRef(null);   // MJPEG <img> via proxy (display + captura MediaPipe)
+  const overlayRef    = useRef(null);   // face-box canvas
+  const captureRef    = useRef(null);   // hidden canvas for MediaPipe
+  const landmarkerRef = useRef(null);
+  const intervalRef   = useRef(null);
+  const currentModeRef       = useRef('full_attention');
+  const selectedClassIdRef   = useRef(null);
+  const lastKnownBoxesRef    = useRef({ boxes: [], at: 0 });
+  const transcriptEndRef     = useRef(null);
+  const micStreamRef         = useRef(null);
+  const recorderRef          = useRef(null);
+  const videoRef             = useRef(null);
+  const webcamStreamRef      = useRef(null);
+  const isWebcamRef          = useRef(false);
 
-  const closeModal = () => {
-    setShowCreate(false);
-    setEditingCamera(null);
-    resetForm();
-  };
+  // Derived
+  const activeCamera = cameras.find(c => c.id === activeCameraId) || cameras[0] || null;
+  const isWebcam     = activeCamera?.stream_url === '__webcam__';
+  const streamUrl    = isWebcam ? '' : normalizeStreamUrl(activeCamera?.stream_url || '');
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    setError('');
+  // ── Set img src only when streamUrl changes (avoids reconnect loop) ────────
+  // Tudo via proxy: uma única conexão ao DroidCam, CORS habilitado para MediaPipe
+  const proxyUrl = streamUrl
+    ? `http://localhost:5000/api/camera/stream?url=${encodeURIComponent(streamUrl)}`
+    : '';
 
-    if (!name.trim()) {
-      setError('Nome da câmera é obrigatório.');
+  useEffect(() => {
+    if (!proxyUrl || !imgRef.current) return;
+    setStreamOk(false);
+    imgRef.current.src = `${proxyUrl}&t=${Date.now()}`;
+  }, [proxyUrl]);
+
+  // ── localStorage persistence ──────────────────────────────────────────────
+
+  useEffect(() => { saveCameras(cameras); }, [cameras]);
+  useEffect(() => {
+    if (activeCameraId) localStorage.setItem(LS_ACTIVE_KEY, activeCameraId);
+    else localStorage.removeItem(LS_ACTIVE_KEY);
+  }, [activeCameraId]);
+
+  // Auto-select first camera
+  useEffect(() => {
+    if (!activeCameraId && cameras.length > 0) setActiveCamId(cameras[0].id);
+    if (activeCameraId && !cameras.find(c => c.id === activeCameraId))
+      setActiveCamId(cameras[0]?.id || null);
+  }, [cameras, activeCameraId]);
+
+  // ── Load live classes ─────────────────────────────────────────────────────
+
+  useEffect(() => {
+    api.get('/api/classes', { params: { status: 'live' } })
+      .then(res => {
+        const list = res.data.classes || [];
+        setAvailableClasses(list);
+        if (list.length > 0) { setSelectedClassId(list[0].id); setLiveClass(list[0]); }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { selectedClassIdRef.current = selectedClassId; }, [selectedClassId]);
+  useEffect(() => {
+    if (liveClass?.monitoring_mode) currentModeRef.current = liveClass.monitoring_mode;
+  }, [liveClass]);
+
+  // ── Socket ────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const onConnect    = () => { setConnected(true); const cid = selectedClassIdRef.current; if (cid) socket.emit('join_class', { class_id: cid }); };
+    const onDisconnect = () => setConnected(false);
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    setConnected(socket.connected);
+    return () => { socket.off('connect', onConnect); socket.off('disconnect', onDisconnect); };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedClassId) return;
+    if (!socket.connected) socket.connect();
+    else socket.emit('join_class', { class_id: selectedClassId });
+    return () => { socket.emit('leave_class', { class_id: selectedClassId }); };
+  }, [selectedClassId]);
+
+  // ── Webcam source ────────────────────────────────────────────────────────
+
+  useEffect(() => { isWebcamRef.current = isWebcam; }, [isWebcam]);
+
+  useEffect(() => {
+    if (!isWebcam) {
+      webcamStreamRef.current?.getTracks().forEach(t => t.stop());
+      webcamStreamRef.current = null;
       return;
     }
-
-    const payload = {
-      name: name.trim(),
-      location: location.trim(),
-      stream_url: streamUrl.trim(),
-      default_mode: defaultMode,
-      created_at: new Date().toISOString(),
+    // Reuse existing live stream (e.g. user re-clicked the same webcam camera)
+    const existing = webcamStreamRef.current;
+    if (existing && existing.getTracks().some(t => t.readyState === 'live')) {
+      if (videoRef.current && videoRef.current.srcObject !== existing) {
+        videoRef.current.srcObject = existing;
+        videoRef.current.play().catch(() => {});
+      }
+      setStreamOk(true);
+      return;
+    }
+    setStreamOk(false);
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        webcamStreamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+        setStreamOk(true);
+      })
+      .catch(() => setStreamOk(false));
+    return () => {
+      webcamStreamRef.current?.getTracks().forEach(t => t.stop());
+      webcamStreamRef.current = null;
     };
+  }, [isWebcam, activeCameraId]);
 
-    if (editingCamera) {
-      setCameras((prev) =>
-        prev.map((cam) =>
-          cam.id === editingCamera.id ? { ...cam, ...payload } : cam
-        )
-      );
+  // ── Transcription ─────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const onTranscription = (data) => {
+      if (selectedClassIdRef.current && data.class_id !== selectedClassIdRef.current) return;
+      setTranscriptions(prev => [...prev, {
+        content: data.content,
+        time: new Date(data.timestamp || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      }]);
+    };
+    socket.on('new_transcription', onTranscription);
+    return () => socket.off('new_transcription', onTranscription);
+  }, []);
+
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [transcriptions]);
+
+  // ── MediaPipe init ────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    let cancelled = false;
+    async function init() {
+      try {
+        const { FilesetResolver, FaceLandmarker } = await import(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs'
+        );
+        const vision = await FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
+        );
+        const fl = await FaceLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+            delegate: 'CPU',
+          },
+          outputFaceBlendshapes: false,
+          outputFacialTransformationMatrixes: true,
+          runningMode: 'VIDEO',
+          numFaces: 10,
+          minFaceDetectionConfidence: 0.1,
+          minFacePresenceScore: 0.1,
+          minTrackingConfidence: 0.1,
+        });
+        if (!cancelled) { landmarkerRef.current = fl; setMpReady(true); }
+      } catch (err) {
+        if (!cancelled) setMpError('Erro ao carregar MediaPipe: ' + err.message);
+      }
+    }
+    init();
+    return () => {
+      cancelled = true;
+      landmarkerRef.current?.close();
+      landmarkerRef.current = null;
+    };
+  }, []);
+
+  // ── Drawing ───────────────────────────────────────────────────────────────
+
+  const drawFaceBoxes = useCallback((faceBoxes, W, H) => {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    overlay.width  = W;
+    overlay.height = H;
+    const ctx = overlay.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    faceBoxes.forEach(({ x, y, w, h, distracted: dist }) => {
+      const color = dist ? '#F59E0B' : '#22C55E';
+      ctx.save();
+      ctx.shadowColor = color; ctx.shadowBlur = 14;
+      ctx.strokeStyle = color; ctx.lineWidth = 4;
+      ctx.strokeRect(x * W, y * H, w * W, h * H);
+      ctx.restore();
+    });
+  }, []);
+
+  // ── Detection loop ────────────────────────────────────────────────────────
+
+  const processFrame = useCallback(() => {
+    const capture = captureRef.current;
+    if (!capture || !landmarkerRef.current) return;
+
+    const source = isWebcamRef.current ? videoRef.current : imgRef.current;
+    if (!source) return;
+    if (isWebcamRef.current) {
+      if (source.readyState < 2) return;
     } else {
-      const newCamera = { ...payload, id: crypto.randomUUID() };
-      setCameras((prev) => [...prev, newCamera]);
+      if (!source.complete || source.naturalWidth === 0) return;
     }
 
-    closeModal();
+    const W = (source.videoWidth  || source.naturalWidth)  || 640;
+    const H = (source.videoHeight || source.naturalHeight) || 480;
+    capture.width  = W;
+    capture.height = H;
+    capture.getContext('2d').drawImage(source, 0, 0, W, H);
+
+    let results;
+    try { results = landmarkerRef.current.detectForVideo(capture, Date.now()); }
+    catch (e) { console.error('[RoomCamera] detect error:', e.message); return; }
+
+    const matrices  = results.facialTransformationMatrixes || [];
+    const landmarks = results.faceLandmarks || [];
+    const faceCount = Math.max(matrices.length, landmarks.length);
+    const mode      = currentModeRef.current;
+
+    let attentive = 0, distracted = 0;
+    const faceBoxes = [];
+
+    for (let i = 0; i < faceCount; i++) {
+      const mat  = matrices[i];
+      const lms  = landmarks[i];
+      const pose = mat ? computeHeadPose(mat.data) : { yaw: 0, pitch: 0, roll: 0 };
+      const ear  = lms ? computeEAR(lms) : 1.0;
+      // No transformation matrix but landmarks present = head turned beyond pose estimation range → distracted
+      const dist = !mat ? !!lms : isDistracted(pose.yaw, pose.pitch, ear, mode);
+      if (dist) distracted++; else attentive++;
+
+      if (lms?.length > 0) {
+        const xs = lms.map(p => p.x), ys = lms.map(p => p.y);
+        faceBoxes.push({ x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), distracted: dist });
+      }
+      if (i === 0 && mat) setDebugPose({ yaw: pose.yaw.toFixed(1), pitch: pose.pitch.toFixed(1), ear: ear.toFixed(3) });
+    }
+
+    const now = Date.now();
+    const GHOST_TTL = 2500;
+
+    if (faceBoxes.length > 0) {
+      lastKnownBoxesRef.current = { boxes: faceBoxes, at: now };
+    }
+
+    // Persist recently-lost faces as distracted ghosts for up to GHOST_TTL ms
+    const age = now - lastKnownBoxesRef.current.at;
+    const ghostBoxes = (age > 0 && age < GHOST_TTL && faceBoxes.length < lastKnownBoxesRef.current.boxes.length)
+      ? lastKnownBoxesRef.current.boxes.slice(faceBoxes.length).map(b => ({ ...b, distracted: true }))
+      : [];
+
+    const ghostCount = ghostBoxes.length;
+    const total = attentive + distracted + ghostCount;
+    const pct   = total > 0 ? Math.round(attentive / total * 100) : 0;
+    setAggregate(total > 0 ? { total, attentive, distracted: distracted + ghostCount, pct } : null);
+    drawFaceBoxes([...faceBoxes, ...ghostBoxes], W, H);
+
+    const cid = selectedClassIdRef.current;
+    if (cid && total > 0) {
+      socket.emit('room_attention', { class_id: cid, total_faces: total, attentive, distracted: distracted + ghostCount, attention_pct: pct, monitoring_mode: mode });
+    }
+  }, [drawFaceBoxes]);
+
+  useEffect(() => {
+    if (!monitoring || !mpReady) return;
+    lastKnownBoxesRef.current = { boxes: [], at: 0 };
+    intervalRef.current = setInterval(processFrame, 200);
+    return () => {
+      clearInterval(intervalRef.current);
+      lastKnownBoxesRef.current = { boxes: [], at: 0 };
+      if (recorderRef.current) { recorderRef.current.stop(); recorderRef.current = null; }
+      if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
+      setMicActive(false);
+      setAggregate(null);
+      setDebugPose(null);
+      if (overlayRef.current) {
+        const ctx = overlayRef.current.getContext('2d');
+        ctx.clearRect(0, 0, overlayRef.current.width, overlayRef.current.height);
+      }
+    };
+  }, [monitoring, mpReady, processFrame]);
+
+  // ── Room open / close (monitoring + microphone) ───────────────────────────
+
+  const handleOpenRoom = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      micStreamRef.current = stream;
+      setMicActive(true);
+
+      // Use start/stop cycle so each Blob is a complete valid WebM file.
+      // MediaRecorder.start(timeslice) produces fragmented WebM that Groq rejects.
+      function recordChunk() {
+        if (!micStreamRef.current) return;
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus' : 'audio/webm';
+        const recorder = new MediaRecorder(micStreamRef.current, { mimeType });
+        const chunks = [];
+        recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+        recorder.onstop = () => {
+          if (chunks.length > 0 && selectedClassIdRef.current && micStreamRef.current) {
+            const blob = new Blob(chunks, { type: 'audio/webm' });
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              socket.emit('audio_chunk', { class_id: selectedClassIdRef.current, audio: reader.result.split(',')[1] });
+            };
+            reader.readAsDataURL(blob);
+          }
+          recordChunk();
+        };
+        recorder.start();
+        recorderRef.current = recorder;
+        setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 5000);
+      }
+
+      recordChunk();
+    } catch (err) {
+      console.warn('[RoomCamera] Microfone indisponível:', err.message);
+      setMicActive(false);
+    }
+    setMonitoring(true);
   };
 
-  const handleDelete = (id) => {
-    if (!window.confirm('Remover esta câmera?')) return;
-    setCameras((prev) => prev.filter((cam) => cam.id !== id));
+  const handleCloseRoom = () => {
+    if (recorderRef.current) { recorderRef.current.stop(); recorderRef.current = null; }
+    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
+    setMicActive(false);
+    setMonitoring(false);
   };
+
+  // ── Camera CRUD ───────────────────────────────────────────────────────────
+
+  const handleSaveCam = (payload) => {
+    if (editingCam) {
+      setCameras(prev => prev.map(c => c.id === editingCam.id ? { ...c, ...payload } : c));
+    } else {
+      const cam = { ...payload, id: crypto.randomUUID(), created_at: new Date().toISOString() };
+      setCameras(prev => [...prev, cam]);
+      setActiveCamId(cam.id);
+    }
+    setShowForm(false);
+    setEditingCam(null);
+  };
+
+  const handleDeleteCam = (id) => {
+    if (!window.confirm('Remover esta câmera?')) return;
+    setCameras(prev => prev.filter(c => c.id !== id));
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <Layout role="teacher">
-      {/* Page header */}
-      <div className="flex justify-between items-start mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-[#F1F5F9] m-0 mb-1">
-            Minhas Câmeras
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-[#64748B] m-0">
-            {cameras.length} câmera{cameras.length !== 1 ? 's' : ''} configurada{cameras.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#1B4F81] text-white font-semibold text-sm hover:bg-[#164572] transition-colors shadow-sm"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Adicionar câmera
-        </button>
-      </div>
+    <div className="h-screen overflow-hidden bg-[#0F172A] text-[#F1F5F9] flex flex-col">
 
-      {error && !showCreate && (
-        <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">
-          {error}
+      {/* Header */}
+      <header className="px-5 py-3 bg-[#1B4F81] flex items-center justify-between flex-wrap gap-3 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h1 className="text-base font-semibold m-0">Câmera da Sala</h1>
+          {liveClass && (
+            <span className="text-xs bg-white/10 px-2 py-0.5 rounded-md">{liveClass.title}</span>
+          )}
         </div>
-      )}
 
-      {/* Camera list */}
-      {cameras.length === 0 ? (
-        <div className="py-20 text-center">
-          <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-[#1E293B] flex items-center justify-center mx-auto mb-4">
-            <svg className="w-6 h-6 text-gray-400 dark:text-[#475569]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-          </div>
-          <p className="text-gray-700 dark:text-[#CBD5E1] font-medium text-sm mb-1">
-            Nenhuma câmera configurada
-          </p>
-          <p className="text-gray-400 dark:text-[#475569] text-xs mb-4">
-            Adicione a câmera da sua sala para monitorar a atenção da turma.
-          </p>
-          <button
-            onClick={openCreate}
-            className="px-4 py-2 rounded-lg bg-[#1B4F81] text-white text-sm font-semibold hover:bg-[#164572] transition-colors"
-          >
-            + Adicionar câmera
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {cameras.map((cam) => (
-            <div
-              key={cam.id}
-              className="group bg-white dark:bg-[#1E293B] rounded-xl border border-gray-200 dark:border-[#334155] px-5 py-4 flex items-center gap-4 hover:border-[#4A90D9]/40 hover:shadow-sm transition-all cursor-pointer"
-              onClick={() => setViewingCamera(cam)}
+        <div className="flex items-center gap-2">
+          {availableClasses.length > 1 && (
+            <select
+              value={selectedClassId || ''}
+              onChange={e => { setSelectedClassId(+e.target.value); setLiveClass(availableClasses.find(c => c.id === +e.target.value)); }}
+              className="text-xs rounded-lg border border-white/20 bg-white/10 text-white px-2.5 py-1.5 focus:outline-none"
             >
-              {/* Icon */}
-              <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-gray-100 dark:bg-[#334155] flex items-center justify-center">
-                <svg className="w-5 h-5 text-gray-500 dark:text-[#94A3B8]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              </div>
+              {availableClasses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+            </select>
+          )}
 
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-semibold text-gray-900 dark:text-[#F1F5F9] truncate">
-                    {cam.name}
-                  </span>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 dark:bg-[#334155] text-gray-500 dark:text-[#94A3B8]">
-                    {MODE_LABELS[cam.default_mode] || cam.default_mode}
-                  </span>
-                </div>
-                {cam.location && (
-                  <p className="text-xs text-gray-400 dark:text-[#475569] mt-0.5 truncate">
-                    {cam.location}
-                  </p>
-                )}
-                {cam.stream_url && (
-                  <p className="text-xs text-gray-400 dark:text-[#475569] mt-0.5 truncate font-mono">
-                    {normalizeStreamUrl(cam.stream_url)}
-                  </p>
-                )}
-                <p className="text-xs text-gray-400 dark:text-[#475569] mt-0.5">
-                  Adicionada em {formatDate(cam.created_at)}
-                </p>
-              </div>
+          <button
+            onClick={() => setShowSettings(s => !s)}
+            title="Configurações"
+            className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors border-none cursor-pointer ${showSettings ? 'bg-white/20 text-white' : 'text-white/70 bg-transparent hover:bg-white/10'}`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
 
-              {/* Actions — stopPropagation para não abrir o viewer ao clicar nos botões */}
-              <div className="flex gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                <button
-                  onClick={() => openEdit(cam)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-[#334155] text-gray-600 dark:text-[#94A3B8] text-xs font-semibold hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z" />
-                  </svg>
-                  Editar
-                </button>
-                <button
-                  onClick={() => handleDelete(cam.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-900/40 text-red-500 text-xs font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m2 0a1 1 0 00-1-1h-4a1 1 0 00-1 1m6 0H7" />
-                  </svg>
-                  Remover
-                </button>
-              </div>
-            </div>
-          ))}
+          {!monitoring ? (
+            <button
+              onClick={handleOpenRoom}
+              disabled={!activeCamera || !streamOk || availableClasses.length === 0}
+              className="px-4 py-2 rounded-lg bg-green-500 text-white font-semibold text-sm hover:bg-green-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Abrir Sala
+            </button>
+          ) : (
+            <button
+              onClick={handleCloseRoom}
+              className="px-4 py-2 rounded-lg bg-red-500 text-white font-semibold text-sm hover:bg-red-600 transition-colors"
+            >
+              Fechar Sala
+            </button>
+          )}
+        </div>
+      </header>
+
+      {availableClasses.length === 0 && (
+        <div className="px-5 py-2 bg-amber-900/40 text-amber-300 text-xs text-center flex-shrink-0">
+          Nenhuma aula ao vivo. Inicie uma aula no Dashboard do Professor para poder monitorar.
         </div>
       )}
 
-      {/* Camera viewer modal */}
-      {viewingCamera && (
-        <CameraViewerModal
-          camera={viewingCamera}
-          onClose={() => setViewingCamera(null)}
-        />
-      )}
+      {/* Main — fills remaining height, never grows beyond viewport */}
+      <div className="flex-1 flex overflow-hidden relative min-h-0">
 
-      {/* Create / Edit Modal */}
-      {showCreate && (
-        <div
-          className="fixed inset-0 bg-black/40 z-[1000] flex items-center justify-center p-4"
-          onClick={closeModal}
-        >
-          <div
-            className="bg-white dark:bg-[#1E293B] rounded-2xl p-6 max-w-md w-full shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-[#F1F5F9]">
-                {editingCamera ? 'Editar câmera' : 'Adicionar câmera'}
-              </h2>
+        {/* Stream area */}
+        <div className="flex-1 relative bg-black min-w-0">
+          <canvas ref={captureRef} className="hidden" />
+
+          {!activeCamera && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+              <svg className="w-12 h-12 text-[#475569]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <p className="text-[#64748B] text-sm">Nenhuma câmera configurada.</p>
+              <button onClick={() => setShowSettings(true)}
+                className="px-4 py-2 rounded-lg bg-[#1B4F81] text-white text-sm font-semibold hover:bg-[#164572] transition-colors">
+                + Configurar câmera
+              </button>
+            </div>
+          )}
+
+          {activeCamera && (isWebcam || streamUrl) && (
+            <>
+              {isWebcam ? (
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <img
+                  ref={imgRef}
+                  alt="Stream da câmera"
+                  crossOrigin="anonymous"
+                  onLoad={() => setStreamOk(true)}
+                  onError={() => { setStreamOk(false); setMonitoring(false); }}
+                  className="w-full h-full object-contain"
+                />
+              )}
+
+              {monitoring && (
+                <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+              )}
+
+              {monitoring && (
+                <div className="absolute top-3 left-3 z-10 bg-black/60 text-white text-xs font-mono rounded-md px-3 py-2 space-y-0.5 pointer-events-none">
+                  <div>{connected ? '🟢 Socket' : '🔴 Socket desconectado'}</div>
+                  <div>{mpReady ? '🟢 MediaPipe' : (mpError || '🟡 Carregando...')}</div>
+                  <div>{micActive ? '🎙️ Mic ativo' : '🔇 Sem microfone'}</div>
+                  {aggregate && <div>Rostos: {aggregate.total} · Atentos: {aggregate.attentive} · {aggregate.pct}%</div>}
+                  {debugPose && <div>yaw:{debugPose.yaw}° pitch:{debugPose.pitch}° EAR:{debugPose.ear}</div>}
+                </div>
+              )}
+
+              {monitoring && (
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+                  {aggregate ? (
+                    <div className={`flex items-center gap-2 ${pctColor(aggregate.pct).bg} text-white font-semibold text-sm rounded-full px-4 py-1.5 shadow-lg`}>
+                      <span className="inline-block w-2.5 h-2.5 rounded-full bg-white" />
+                      {aggregate.attentive}/{aggregate.total} atentos · {aggregate.pct}%
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 bg-black/60 text-gray-300 text-sm rounded-full px-4 py-1.5">
+                      <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-400 animate-pulse" />
+                      Procurando rostos...
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!streamOk && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80">
+                  <p className="text-[#F1F5F9] text-sm font-semibold">Câmera indisponível</p>
+                  {isWebcam ? (
+                    <p className="text-[#64748B] text-xs">Verifique as permissões da webcam no navegador.</p>
+                  ) : (
+                    <>
+                      <p className="text-[#64748B] text-xs">Verifique se o DroidCam está ativo e na mesma rede.</p>
+                      <p className="text-[#334155] text-xs font-mono">{streamUrl}</p>
+                    </>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (isWebcam) {
+                        setStreamOk(false);
+                        navigator.mediaDevices.getUserMedia({ video: true })
+                          .then(stream => {
+                            webcamStreamRef.current = stream;
+                            if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); }
+                            setStreamOk(true);
+                          })
+                          .catch(() => {});
+                      } else if (imgRef.current && proxyUrl) {
+                        setStreamOk(false);
+                        imgRef.current.src = `${proxyUrl}&t=${Date.now()}`;
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-[#1B4F81] text-white text-xs font-semibold hover:bg-[#164572] transition-colors mt-1">
+                    Reconectar
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Transcription panel — fixed width, internal scroll */}
+        <div className="w-[300px] bg-[#1E293B] border-l border-[#334155] flex flex-col flex-shrink-0">
+          <div className="px-4 py-3 border-b border-[#334155] flex items-center justify-between flex-shrink-0">
+            <h3 className="text-sm font-semibold text-[#F1F5F9]">Transcrição</h3>
+            {aggregate && (
+              <span className={`text-xs font-semibold tabular-nums ${pctColor(aggregate.pct).text}`}>
+                {aggregate.attentive}/{aggregate.total} · {aggregate.pct}%
+              </span>
+            )}
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+            {transcriptions.length === 0 ? (
+              <p className="text-[#475569] text-xs">
+                {!selectedClassId ? 'Selecione uma aula ao vivo.' : 'Aguardando transcrição da aula...'}
+              </p>
+            ) : (
+              transcriptions.map((t, i) => (
+                <div key={i}>
+                  <span className="text-[10px] text-[#475569] font-mono">{t.time}</span>
+                  <p className="text-sm text-[#CBD5E1] mt-0.5 leading-relaxed">{t.content}</p>
+                </div>
+              ))
+            )}
+            <div ref={transcriptEndRef} />
+          </div>
+        </div>
+
+        {/* Settings overlay — slides over transcription panel */}
+        {showSettings && (
+          <div className="absolute inset-y-0 right-0 w-[300px] bg-[#1E293B] border-l border-[#334155] z-50 flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#334155] flex-shrink-0">
+              <h3 className="text-sm font-semibold text-[#F1F5F9]">Configurações</h3>
               <button
-                onClick={closeModal}
-                className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 dark:text-[#64748B] hover:text-gray-600 dark:hover:text-[#94A3B8] hover:bg-gray-100 dark:hover:bg-[#334155] transition-colors border-none bg-transparent cursor-pointer"
+                onClick={() => setShowSettings(false)}
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-[#64748B] hover:bg-[#334155] transition-colors border-none bg-transparent cursor-pointer"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -388,94 +774,94 @@ export default function CameraManager() {
               </button>
             </div>
 
-            {error && (
-              <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">
-                {error}
-              </div>
-            )}
+            <div className="flex-1 overflow-y-auto p-4 space-y-5 min-h-0">
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Attention stats */}
               <div>
-                <label htmlFor="cam-name" className="block text-sm font-medium text-gray-700 dark:text-[#CBD5E1] mb-1.5">
-                  Nome da câmera <span className="text-red-400">*</span>
-                </label>
-                <input
-                  id="cam-name"
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Ex: Câmera — Sala A02"
-                  autoFocus
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 dark:border-[#334155] bg-white dark:bg-[#0F172A] text-gray-900 dark:text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9] placeholder-gray-400 dark:placeholder-[#475569]"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="cam-location" className="block text-sm font-medium text-gray-700 dark:text-[#CBD5E1] mb-1.5">
-                  Localização <span className="text-gray-400 font-normal">(opcional)</span>
-                </label>
-                <input
-                  id="cam-location"
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="Ex: Bloco A, 1º andar"
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 dark:border-[#334155] bg-white dark:bg-[#0F172A] text-gray-900 dark:text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9] placeholder-gray-400 dark:placeholder-[#475569]"
-                />
+                <p className="text-xs text-[#475569] mb-2 uppercase tracking-wide font-medium">Atenção da Turma</p>
+                {aggregate ? (
+                  <div className="space-y-2">
+                    <div className="p-3 rounded-lg bg-[#334155]">
+                      <p className={`text-2xl font-bold ${pctColor(aggregate.pct).text}`}>{aggregate.pct}%</p>
+                      <p className="text-xs text-[#94A3B8]">atenção média</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="p-3 rounded-lg bg-[#334155] text-center">
+                        <p className="text-xl font-bold text-green-400">{aggregate.attentive}</p>
+                        <p className="text-xs text-[#94A3B8]">atentos</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-[#334155] text-center">
+                        <p className="text-xl font-bold text-amber-400">{aggregate.distracted}</p>
+                        <p className="text-xs text-[#94A3B8]">desatentos</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[#475569] text-xs">
+                    {!activeCamera ? 'Configure uma câmera.' :
+                     !streamOk ? 'Câmera indisponível.' :
+                     !monitoring ? 'Clique em "Abrir Sala".' :
+                     mpReady ? 'Procurando rostos...' : (mpError || 'Carregando MediaPipe...')}
+                  </p>
+                )}
               </div>
 
+              {/* Current mode */}
               <div>
-                <label htmlFor="cam-url" className="block text-sm font-medium text-gray-700 dark:text-[#CBD5E1] mb-1.5">
-                  URL do stream <span className="text-gray-400 font-normal">(ex: http://192.168.x.x:4747)</span>
-                </label>
-                <input
-                  id="cam-url"
-                  type="text"
-                  value={streamUrl}
-                  onChange={(e) => setStreamUrl(e.target.value)}
-                  placeholder="http://192.168.x.x:4747"
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 dark:border-[#334155] bg-white dark:bg-[#0F172A] text-gray-900 dark:text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9] placeholder-gray-400 dark:placeholder-[#475569] font-mono"
-                />
-                <p className="text-xs text-gray-400 dark:text-[#475569] mt-1">
-                  O <span className="font-mono">/video</span> será adicionado automaticamente se necessário.
+                <p className="text-xs text-[#475569] mb-1 uppercase tracking-wide font-medium">Modo ativo</p>
+                <p className="text-sm font-semibold text-white">
+                  {MODE_LABELS[liveClass?.monitoring_mode || 'full_attention']}
                 </p>
               </div>
 
+              {/* Cameras */}
               <div>
-                <label htmlFor="cam-mode" className="block text-sm font-medium text-gray-700 dark:text-[#CBD5E1] mb-1.5">
-                  Modo padrão de monitoramento
-                </label>
-                <select
-                  id="cam-mode"
-                  value={defaultMode}
-                  onChange={(e) => setDefaultMode(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 dark:border-[#334155] bg-white dark:bg-[#0F172A] text-gray-900 dark:text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9]"
-                >
-                  {Object.entries(MODE_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
+                <p className="text-xs text-[#475569] mb-2 uppercase tracking-wide font-medium">Câmeras</p>
+                <div className="space-y-1.5">
+                  {cameras.map(cam => (
+                    <div
+                      key={cam.id}
+                      onClick={() => { setActiveCamId(cam.id); setStreamOk(false); }}
+                      className={`flex items-center gap-2 p-2.5 rounded-lg cursor-pointer transition-colors ${cam.id === activeCameraId ? 'bg-[#4A90D9]/20 border border-[#4A90D9]/40' : 'bg-[#334155] hover:bg-[#3D4F68]'}`}
+                    >
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cam.id === activeCameraId ? 'bg-[#4A90D9]' : 'bg-[#475569]'}`} />
+                      <span className="text-xs text-[#F1F5F9] truncate flex-1">{cam.name}</span>
+                      <div className="flex gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => { setEditingCam(cam); setShowForm(true); }}
+                          className="w-6 h-6 flex items-center justify-center rounded text-[#64748B] hover:text-[#94A3B8] hover:bg-[#475569] transition-colors border-none bg-transparent cursor-pointer">
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z" />
+                          </svg>
+                        </button>
+                        <button onClick={() => handleDeleteCam(cam.id)}
+                          className="w-6 h-6 flex items-center justify-center rounded text-red-500/60 hover:text-red-400 hover:bg-[#475569] transition-colors border-none bg-transparent cursor-pointer">
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m2 0a1 1 0 00-1-1h-4a1 1 0 00-1 1m6 0H7" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
                   ))}
-                </select>
+                  <button onClick={() => { setEditingCam(null); setShowForm(true); }}
+                    className="w-full text-xs text-[#4A90D9] hover:text-[#7DB8F0] py-1.5 transition-colors bg-transparent border-none cursor-pointer">
+                    + Adicionar câmera
+                  </button>
+                </div>
               </div>
 
-              <div className="flex gap-2 justify-end pt-1">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="px-4 py-2 rounded-lg border border-gray-200 dark:border-[#334155] text-gray-600 dark:text-[#94A3B8] text-sm font-medium cursor-pointer hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors bg-transparent"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-[#1B4F81] text-white text-sm font-semibold hover:bg-[#164572] transition-colors"
-                >
-                  {editingCamera ? 'Salvar alterações' : 'Adicionar'}
-                </button>
-              </div>
-            </form>
+              <p className="text-[#334155] text-xs">Detecção anônima — nenhuma imagem sai do navegador.</p>
+            </div>
           </div>
-        </div>
+        )}
+      </div>
+
+      {showForm && (
+        <CameraFormModal
+          camera={editingCam}
+          onSave={handleSaveCam}
+          onClose={() => { setShowForm(false); setEditingCam(null); }}
+        />
       )}
-    </Layout>
+    </div>
   );
 }
