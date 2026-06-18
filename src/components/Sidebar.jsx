@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
+import ParticleField from './ParticleField';
 
 const NAV_ITEMS = {
   teacher: [
@@ -61,10 +62,14 @@ export default function Sidebar({ role = 'student' }) {
   return (
     <aside
       className="w-[240px] min-h-screen flex flex-col fixed left-0 top-0 z-30"
-      style={{ backgroundColor: '#1B4F81' }}
+      style={{ background: 'radial-gradient(circle at top, #183b73, #07122f 70%)' }}
       role="navigation"
       aria-label="Navegação principal"
     >
+      {/* Partículas — mesmo efeito do login/registro, atrás do conteúdo */}
+      <ParticleField className="absolute inset-0 w-full h-full pointer-events-none" />
+
+      <div className="relative z-10 flex flex-col flex-1 min-h-0">
       {/* Logo */}
       <div className="px-5 pt-6 pb-5">
         <Link to={`/${role}/dashboard`} className="no-underline flex items-center gap-3">
@@ -171,6 +176,7 @@ export default function Sidebar({ role = 'student' }) {
             </button>
           </div>
         )}
+      </div>
       </div>
     </aside>
   );

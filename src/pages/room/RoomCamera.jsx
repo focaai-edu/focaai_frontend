@@ -310,19 +310,32 @@ export default function RoomCamera() {
 
   // ── Drawing ───────────────────────────────────────────────────────────────
 
-  const drawFaceBoxes = useCallback((faceBoxes, W, H) => {
+  const drawFaceBoxes = useCallback((faceBoxes, frameW, frameH) => {
     const overlay = overlayRef.current;
     if (!overlay) return;
-    overlay.width  = W;
-    overlay.height = H;
+
+    // Canvas covers the full container; image uses object-contain → may have
+    // black bars. Compute the actual displayed image rect inside the container.
+    const cW = overlay.clientWidth  || frameW;
+    const cH = overlay.clientHeight || frameH;
+    const scale   = Math.min(cW / frameW, cH / frameH);
+    const dispW   = frameW * scale;
+    const dispH   = frameH * scale;
+    const offsetX = (cW - dispW) / 2;
+    const offsetY = (cH - dispH) / 2;
+
+    overlay.width  = cW;
+    overlay.height = cH;
     const ctx = overlay.getContext('2d');
-    ctx.clearRect(0, 0, W, H);
+    ctx.clearRect(0, 0, cW, cH);
+
     faceBoxes.forEach(({ x, y, w, h, distracted: dist }) => {
       const color = dist ? '#F59E0B' : '#22C55E';
       ctx.save();
       ctx.shadowColor = color; ctx.shadowBlur = 14;
       ctx.strokeStyle = color; ctx.lineWidth = 4;
-      ctx.strokeRect(x * W, y * H, w * W, h * H);
+      // x,y,w,h are 0-1 normalised relative to the frame
+      ctx.strokeRect(offsetX + x * dispW, offsetY + y * dispH, w * dispW, h * dispH);
       ctx.restore();
     });
   }, []);

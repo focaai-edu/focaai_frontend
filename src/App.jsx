@@ -11,6 +11,7 @@ import StudentDashboard from './pages/student/Dashboard';
 import StudentClassLive from './pages/student/ClassLive';
 import StudentClassReview from './pages/student/ClassReview';
 import RoomCamera from './pages/room/RoomCamera';
+import RoomCameraTest from './pages/room/RoomCameraTest';
 
 export default function App() {
   return (
@@ -40,6 +41,8 @@ export default function App() {
         <Route path="/room" element={
           <ProtectedRoute role="teacher"><RoomCamera /></ProtectedRoute>
         } />
+        {/* Banco de testes do algoritmo de atenção com imagem estática (dev) */}
+        <Route path="/room-test" element={<RoomCameraTest />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AuthProvider>

@@ -2,41 +2,147 @@ import { useState, useRef, useCallback } from 'react';
 import { MODE_THRESHOLDS, MODE_LABELS, pctColor } from '../../lib/attentionAlgo';
 import api from '../../services/api';
 
-// RoomCameraTest — testa o pipeline de detecção do backend (YuNet + solvePnP)
-// com uma imagem estática do disco. Usa o mesmo endpoint que a /room usa ao vivo.
+// ── Parameter definitions ─────────────────────────────────────────────────────
+
+// Threshold defaults per mode — mirrors backend _MODE_THRESHOLDS.
+// pitch_down: 90 = desabilitado (nunca atingível, pois pitch ∈ [-90, 90]).
+const MODE_THRESHOLD_DEFAULTS = {
+  full_attention: { yaw_threshold: 35, pitch_up: 30, pitch_down: 25, eye_ratio_threshold: 0.25 },
+  activity:       { yaw_threshold: 35, pitch_up: 35, pitch_down: 90, eye_ratio_threshold: 0.25 },
+  exam:           { yaw_threshold: 30, pitch_up: 30, pitch_down: 90, eye_ratio_threshold: 0.25 },
+  break:          { yaw_threshold: 35, pitch_up: 30, pitch_down: 25, eye_ratio_threshold: 0.25 },
+};
+
+const DEFAULT_PARAMS = {
+  // Detection
+  score_threshold: 0.75,
+  nms_threshold: 0.3,
+  top_k: 100,
+  // Pose estimation
+  yaw_scale: 45,
+  pitch_ref: 0.55,
+  pitch_scale: 150,
+  // Attention thresholds (initialized to full_attention defaults)
+  ...MODE_THRESHOLD_DEFAULTS.full_attention,
+  eye_ratio_threshold: 0.25,
+};
+
+const PARAM_DEFS = [
+  {
+    section: 'Detecção YuNet',
+    items: [
+      {
+        key: 'score_threshold',
+        label: 'Score Threshold',
+        desc: 'Confiança mínima para aceitar um rosto. ↓ detecta mais rostos (risco de falsos positivos) · ↑ menos rostos, maior precisão.',
+        min: 0.3, max: 1.0, step: 0.05, fmt: v => v.toFixed(2),
+      },
+      {
+        key: 'nms_threshold',
+        label: 'NMS Threshold',
+        desc: 'Sobreposição máxima entre caixas antes de eliminar a menos confiante. ↓ suprime mais duplicatas · ↑ permite mais sobreposição.',
+        min: 0.1, max: 0.9, step: 0.05, fmt: v => v.toFixed(2),
+      },
+      {
+        key: 'top_k',
+        label: 'Top K',
+        desc: 'Número máximo de candidatos avaliados antes do NMS. Deve ser ≥ número de rostos esperados na cena.',
+        min: 10, max: 500, step: 10, isInt: true, fmt: v => String(v),
+      },
+    ],
+  },
+  {
+    section: 'Limiares de Atenção',
+    items: [
+      {
+        key: 'yaw_threshold',
+        label: 'Yaw máximo (°)',
+        desc: 'Rotação horizontal máxima da cabeça antes de marcar desatento. Yaw = virar a cabeça para os lados.',
+        min: 5, max: 90, step: 1, isInt: true, fmt: v => `${v}°`,
+      },
+      {
+        key: 'pitch_up',
+        label: 'Pitch p/ cima máx. (°)',
+        desc: 'Inclinação máxima para cima antes de marcar desatento. Pitch positivo = olhando para o teto.',
+        min: 5, max: 90, step: 1, isInt: true, fmt: v => `${v}°`,
+      },
+      {
+        key: 'pitch_down',
+        label: 'Pitch p/ baixo máx. (°)',
+        desc: 'Inclinação máxima para baixo antes de marcar desatento. Pitch negativo = olhando para o chão ou celular.',
+        min: 5, max: 90, step: 1, isInt: true, fmt: v => `${v}°`,
+      },
+      {
+        key: 'eye_ratio_threshold',
+        label: 'Razão inter-ocular mín.',
+        desc: 'Razão mínima entre distância dos olhos e largura do rosto. Rosto frontal ≈ 0.45 · 45° virado ≈ 0.25 · perfil total ≈ 0.05. Abaixo deste valor → desatento (rosto de perfil).',
+        min: 0.05, max: 0.50, step: 0.01, fmt: v => v.toFixed(2),
+      },
+    ],
+  },
+  {
+    section: 'Estimativa de Pose',
+    items: [
+      {
+        key: 'yaw_scale',
+        label: 'Escala Yaw',
+        desc: 'Fator de escala para converter deslocamento do nariz em graus de yaw. ↑ amplifica pequenas rotações.',
+        min: 10, max: 90, step: 1, isInt: true, fmt: v => String(v),
+      },
+      {
+        key: 'pitch_ref',
+        label: 'Referência de Pitch',
+        desc: 'Posição esperada do nariz no span olho→boca para rosto frontal (0 = nível dos olhos, 1 = nível da boca). Típico: 0.55.',
+        min: 0.30, max: 0.80, step: 0.01, fmt: v => v.toFixed(2),
+      },
+      {
+        key: 'pitch_scale',
+        label: 'Escala Pitch',
+        desc: 'Fator de escala para converter desvio do nariz em graus de pitch. ↑ amplifica pequenas inclinações verticais.',
+        min: 50, max: 300, step: 5, isInt: true, fmt: v => String(v),
+      },
+    ],
+  },
+];
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function RoomCameraTest() {
-  const [mode, setMode]         = useState('full_attention');
-  const [imgUrl, setImgUrl]     = useState(null);
-  const [fileName, setFileName] = useState('');
-  const [faces, setFaces]       = useState(null);
+  const [mode, setMode]           = useState('full_attention');
+  const [imgUrl, setImgUrl]       = useState(null);
+  const [fileName, setFileName]   = useState('');
+  const [faces, setFaces]         = useState(null);
   const [aggregate, setAggregate] = useState(null);
-  const [elapsed, setElapsed]   = useState(null);
+  const [elapsed, setElapsed]     = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [error, setError]       = useState('');
+  const [error, setError]         = useState('');
+  const [params, setParams]       = useState(DEFAULT_PARAMS);
+  const [showParams, setShowParams] = useState(true);
 
-  const imgRef     = useRef(null);
-  const overlayRef = useRef(null);
-  const objectUrlRef = useRef(null);
-  const pendingB64Ref = useRef(null); // base64 do arquivo atual
+  const imgRef        = useRef(null);
+  const overlayRef    = useRef(null);
+  const objectUrlRef  = useRef(null);
+  const pendingB64Ref = useRef(null);
+  const paramsRef     = useRef(DEFAULT_PARAMS);
+  const debounceRef   = useRef(null);
 
-  // ── Desenho dos boxes ─────────────────────────────────────────────────────
+  // ── Draw boxes ────────────────────────────────────────────────────────────
 
   const drawBoxes = useCallback((faceList, W, H) => {
     const overlay = overlayRef.current;
     if (!overlay) return;
-    overlay.width = W;
+    overlay.width  = W;
     overlay.height = H;
     const ctx = overlay.getContext('2d');
     ctx.clearRect(0, 0, W, H);
-    const fontPx = Math.max(14, Math.round(H / 35));
+    const fontPx = Math.max(13, Math.round(H / 40));
     faceList.forEach((f, i) => {
       const { bbox, status } = f;
       const color = status === 'distracted' ? '#F59E0B' : '#22C55E';
-      const px = bbox.x, py = bbox.y, pw = bbox.w, ph = bbox.h;
+      const { x: px, y: py, w: pw, h: ph } = bbox;
       ctx.save();
-      ctx.shadowColor = color; ctx.shadowBlur = 14;
-      ctx.strokeStyle = color; ctx.lineWidth = 4;
+      ctx.shadowColor = color; ctx.shadowBlur = 12;
+      ctx.strokeStyle = color; ctx.lineWidth = 3;
       ctx.strokeRect(px, py, pw, ph);
       ctx.restore();
       const label = `#${i}`;
@@ -44,33 +150,39 @@ export default function RoomCameraTest() {
       ctx.font = `bold ${fontPx}px sans-serif`;
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = color;
-      ctx.fillRect(px, py - fontPx - 6, tw + 10, fontPx + 6);
+      ctx.fillRect(px, py - fontPx - 4, tw + 8, fontPx + 4);
       ctx.fillStyle = '#0F172A';
-      ctx.fillText(label, px + 5, py - 5);
+      ctx.fillText(label, px + 4, py - 3);
       ctx.restore();
     });
   }, []);
 
-  // ── Análise via backend ───────────────────────────────────────────────────
+  // ── Analyze ───────────────────────────────────────────────────────────────
 
-  const analyze = useCallback(async (b64Override, modeOverride) => {
-    const frame_base64 = b64Override ?? pendingB64Ref.current;
-    const monitoring_mode = modeOverride ?? mode;
+  const analyze = useCallback(async (b64Override, modeOverride, paramsOverride) => {
+    const frame_base64    = b64Override    ?? pendingB64Ref.current;
+    const monitoring_mode = modeOverride   ?? mode;
+    const effectiveParams = paramsOverride ?? paramsRef.current;
     if (!frame_base64) return;
 
     setAnalyzing(true);
     setError('');
     const t0 = performance.now();
-
     try {
-      const res = await api.post('/api/room/analyze-frame', { frame_base64, monitoring_mode });
-      const { faces: faceList = [], aggregate: agg = {}, img_w: W, img_h: H } = res.data;
-
+      const res = await api.post('/api/room/analyze-frame', {
+        frame_base64,
+        monitoring_mode,
+        params: effectiveParams,
+      });
+      const { faces: fl = [], aggregate: agg = {}, img_w: W, img_h: H } = res.data;
       setElapsed(Math.round(performance.now() - t0));
-      setFaces(faceList);
-      setAggregate(agg.total > 0 ? { ...agg, pct: Math.round(agg.attentive / agg.total * 100) } : { total: 0, attentive: 0, distracted: 0, pct: 0 });
-
-      if (W && H) drawBoxes(faceList, W, H);
+      setFaces(fl);
+      setAggregate(
+        agg.total > 0
+          ? { ...agg, pct: Math.round((agg.attentive / agg.total) * 100) }
+          : { total: 0, attentive: 0, distracted: 0, pct: 0 }
+      );
+      if (W && H) drawBoxes(fl, W, H);
     } catch (e) {
       setError(e.response?.data?.error || e.message || 'Erro ao analisar.');
     } finally {
@@ -78,7 +190,22 @@ export default function RoomCameraTest() {
     }
   }, [mode, drawBoxes]);
 
-  // ── Upload de arquivo ─────────────────────────────────────────────────────
+  // ── Param update with debounced re-analyze ────────────────────────────────
+
+  const updateParam = useCallback((key, raw) => {
+    const def = PARAM_DEFS.flatMap(s => s.items).find(p => p.key === key);
+    const value = def?.isInt ? parseInt(raw) : parseFloat(raw);
+    const next = { ...paramsRef.current, [key]: value };
+    paramsRef.current = next;
+    setParams(next);
+    if (!pendingB64Ref.current) return;
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      analyze(pendingB64Ref.current, undefined, next);
+    }, 400);
+  }, [analyze]);
+
+  // ── File upload ───────────────────────────────────────────────────────────
 
   const onFile = (e) => {
     const file = e.target.files?.[0];
@@ -96,36 +223,39 @@ export default function RoomCameraTest() {
       ctx.clearRect(0, 0, overlayRef.current.width, overlayRef.current.height);
     }
     setImgUrl(url);
-
-    // Convert to base64 for backend
     const reader = new FileReader();
-    reader.onload = () => {
-      const b64 = reader.result.split(',')[1];
-      pendingB64Ref.current = b64;
-    };
+    reader.onload = () => { pendingB64Ref.current = reader.result.split(',')[1]; };
     reader.readAsDataURL(file);
   };
 
   const onModeChange = (e) => {
     const m = e.target.value;
     setMode(m);
-    if (pendingB64Ref.current) analyze(pendingB64Ref.current, m);
+    // Reset threshold sliders to this mode's defaults
+    const modeDefaults = MODE_THRESHOLD_DEFAULTS[m] || MODE_THRESHOLD_DEFAULTS.full_attention;
+    const next = { ...paramsRef.current, ...modeDefaults };
+    paramsRef.current = next;
+    setParams(next);
+    if (pendingB64Ref.current) analyze(pendingB64Ref.current, m, next);
   };
 
   const t = MODE_THRESHOLDS[mode];
-
-  const roomPayload = aggregate && aggregate.total > 0
+  const roomPayload = aggregate?.total > 0
     ? { class_id: '<id_da_aula>', total_faces: aggregate.total, attentive: aggregate.attentive, distracted: aggregate.distracted, attention_pct: aggregate.pct, monitoring_mode: mode }
     : null;
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-[#F1F5F9] p-6">
       <div className="max-w-6xl mx-auto">
+
+        {/* Header */}
         <header className="mb-6">
           <h1 className="text-xl font-semibold">Teste do algoritmo de atenção — imagem estática</h1>
           <p className="text-sm text-[#94A3B8] mt-1">
-            Usa o mesmo pipeline do backend (<span className="font-mono text-[#7DB8F0]">YuNet + solvePnP</span>) que a <span className="font-mono">/room</span> usa ao vivo.
-            A imagem é enviada ao servidor e os resultados de pose (yaw/pitch/roll) são retornados por rosto.
+            Pipeline backend: <span className="font-mono text-[#7DB8F0]">YuNet + estimativa geométrica</span>.
+            Ajuste os parâmetros e clique em <strong>Analisar</strong> para ver o impacto em tempo real.
           </p>
           <div className="mt-2 text-xs font-mono text-green-400">🟢 Backend (YuNet)</div>
         </header>
@@ -162,18 +292,14 @@ export default function RoomCameraTest() {
           <div className="mb-4 p-3 rounded-lg bg-red-900/20 text-red-400 text-sm">{error}</div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
-          {/* Imagem + overlay */}
+        {/* Main grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+
+          {/* Image + overlay */}
           <div className="relative bg-black rounded-xl overflow-hidden min-h-[300px] flex items-center justify-center">
             {imgUrl ? (
               <div className="relative inline-block">
-                <img
-                  ref={imgRef}
-                  src={imgUrl}
-                  alt="Imagem de teste"
-                  onLoad={() => { if (pendingB64Ref.current) analyze(); }}
-                  className="block max-w-full h-auto"
-                />
+                <img ref={imgRef} src={imgUrl} alt="Imagem de teste" className="block max-w-full h-auto" />
                 <canvas ref={overlayRef} className="absolute inset-0 pointer-events-none" style={{ width: '100%', height: '100%' }} />
               </div>
             ) : (
@@ -181,17 +307,14 @@ export default function RoomCameraTest() {
             )}
           </div>
 
-          {/* Painel de resultados */}
+          {/* Results panel */}
           <div className="space-y-4">
-            {/* Agregado */}
             <div className="bg-[#1E293B] rounded-xl p-4">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs text-[#475569] uppercase tracking-wide font-medium">Agregado</p>
-                {elapsed != null && (
-                  <span className="text-xs font-mono text-[#64748B]">⏱ {elapsed}ms</span>
-                )}
+                {elapsed != null && <span className="text-xs font-mono text-[#64748B]">⏱ {elapsed}ms</span>}
               </div>
-              {aggregate && aggregate.total > 0 ? (
+              {aggregate?.total > 0 ? (
                 <>
                   <p className={`text-3xl font-bold ${pctColor(aggregate.pct).text}`}>{aggregate.pct}%</p>
                   <p className="text-xs text-[#94A3B8] mb-3">atenção média</p>
@@ -211,29 +334,25 @@ export default function RoomCameraTest() {
                   </div>
                 </>
               ) : aggregate ? (
-                <p className="text-[#475569] text-xs">Nenhum rosto detectado nesta imagem.</p>
+                <p className="text-[#475569] text-xs">Nenhum rosto detectado.</p>
               ) : (
                 <p className="text-[#475569] text-xs">Sem análise ainda.</p>
               )}
             </div>
 
-            {/* Thresholds do modo ativo */}
             <div className="bg-[#1E293B] rounded-xl p-4">
               <p className="text-xs text-[#475569] uppercase tracking-wide font-medium mb-2">
-                Thresholds — {MODE_LABELS[mode]}
+                Thresholds ativos — {MODE_LABELS[mode]}
               </p>
-              {t ? (
-                <ul className="text-xs text-[#CBD5E1] font-mono space-y-0.5">
-                  <li>|yaw| &gt; {t.yaw}° → desatento</li>
-                  <li>pitch &gt; {t.pitch_up}° (p/ cima) → desatento</li>
-                  <li>pitch &lt; -{t.pitch_down ?? '∞'}° (p/ baixo) → {t.pitch_down === null ? 'permitido' : 'desatento'}</li>
-                </ul>
-              ) : (
-                <p className="text-[#475569] text-xs">Modo intervalo — ninguém é marcado como desatento.</p>
-              )}
+              <ul className="text-xs text-[#CBD5E1] font-mono space-y-0.5">
+                <li>|yaw| &gt; {params.yaw_threshold}° → desatento</li>
+                <li>pitch &gt; {params.pitch_up}° (p/ cima) → desatento</li>
+                {t?.pitch_down !== null
+                  ? <li>pitch &lt; -{params.pitch_down}° (p/ baixo) → desatento</li>
+                  : <li className="text-[#475569]">pitch p/ baixo → permitido</li>}
+              </ul>
             </div>
 
-            {/* Payload room_attention_update */}
             {roomPayload && (
               <div className="bg-[#1E293B] rounded-xl p-4">
                 <p className="text-xs text-[#475569] uppercase tracking-wide font-medium mb-2">
@@ -247,8 +366,8 @@ export default function RoomCameraTest() {
           </div>
         </div>
 
-        {/* Tabela por rosto */}
-        {faces && faces.length > 0 && (
+        {/* Per-face table */}
+        {faces?.length > 0 && (
           <div className="mt-6 bg-[#1E293B] rounded-xl p-4 overflow-x-auto">
             <p className="text-xs text-[#475569] uppercase tracking-wide font-medium mb-3">Por rosto ({faces.length})</p>
             <table className="w-full text-sm">
@@ -258,6 +377,7 @@ export default function RoomCameraTest() {
                   <th className="py-2 pr-4">yaw</th>
                   <th className="py-2 pr-4">pitch</th>
                   <th className="py-2 pr-4">roll</th>
+                  <th className="py-2 pr-4" title="eye_dist / face_width — abaixo do limiar = perfil">razão ocular</th>
                   <th className="py-2 pr-4">confiança</th>
                   <th className="py-2 pr-4">aluno</th>
                   <th className="py-2">status</th>
@@ -270,7 +390,10 @@ export default function RoomCameraTest() {
                     <td className="py-1.5 pr-4">{Number(f.yaw).toFixed(1)}°</td>
                     <td className="py-1.5 pr-4">{Number(f.pitch).toFixed(1)}°</td>
                     <td className="py-1.5 pr-4">{Number(f.roll).toFixed(1)}°</td>
-                    <td className="py-1.5 pr-4">{f.student_id ? (f.confidence * 100).toFixed(0) + '%' : '—'}</td>
+                    <td className={`py-1.5 pr-4 font-bold ${f.eye_ratio < params.eye_ratio_threshold ? 'text-amber-400' : 'text-[#94A3B8]'}`}>
+                      {f.eye_ratio?.toFixed(2) ?? '—'}
+                    </td>
+                    <td className="py-1.5 pr-4">{f.student_id ? `${(f.confidence * 100).toFixed(0)}%` : '—'}</td>
                     <td className="py-1.5 pr-4 text-[#7DB8F0]">{f.student_name || <span className="text-[#475569]">anônimo</span>}</td>
                     <td className={`py-1.5 font-semibold ${f.status === 'distracted' ? 'text-amber-400' : 'text-green-400'}`}>
                       {f.status === 'distracted' ? 'desatento' : 'atento'}
@@ -281,6 +404,60 @@ export default function RoomCameraTest() {
             </table>
           </div>
         )}
+
+        {/* Parameters panel */}
+        <div className="mt-6">
+          <button
+            onClick={() => setShowParams(s => !s)}
+            className="flex items-center gap-2 text-sm font-semibold text-[#94A3B8] hover:text-[#F1F5F9] transition-colors mb-4 cursor-pointer bg-transparent border-none"
+          >
+            <svg
+              className={`w-4 h-4 transition-transform duration-200 ${showParams ? 'rotate-90' : ''}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            Parâmetros de detecção
+            <span className="text-xs text-[#475569] font-normal ml-1">
+              — alterações re-analisam automaticamente
+            </span>
+          </button>
+
+          {showParams && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {PARAM_DEFS.map(section => (
+                <div key={section.section} className="bg-[#1E293B] rounded-xl p-4">
+                  <p className="text-xs text-[#475569] uppercase tracking-wide font-semibold mb-4">
+                    {section.section}
+                  </p>
+                  <div className="space-y-5">
+                    {section.items.map(def => (
+                      <div key={def.key}>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-sm font-medium text-[#CBD5E1]">{def.label}</label>
+                          <span className="text-sm font-mono font-bold text-[#4A90D9]">
+                            {def.fmt(params[def.key])}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={def.min}
+                          max={def.max}
+                          step={def.step}
+                          value={params[def.key]}
+                          onChange={e => updateParam(def.key, e.target.value)}
+                          className="w-full accent-[#4A90D9] cursor-pointer h-1.5"
+                        />
+                        <p className="text-[11px] text-[#475569] mt-1.5 leading-snug">{def.desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   );

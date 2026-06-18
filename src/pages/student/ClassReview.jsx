@@ -3,6 +3,7 @@ import { useParams } from 'react-router';
 import Layout from '../../components/Layout';
 import api from '../../services/api';
 import AttentionTimeline from '../../components/AttentionTimeline';
+import TranscriptPanel from '../../components/TranscriptPanel';
 import { useAuth } from '../../context/AuthContext';
 
 export default function StudentClassReview() {
@@ -12,6 +13,7 @@ export default function StudentClassReview() {
 
   const [cls, setCls]             = useState(null);
   const [studentData, setStudentData] = useState(null);
+  const [attentionEvents, setAttentionEvents] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [sidePanel, setSidePanel] = useState(null);
 
@@ -21,13 +23,15 @@ export default function StudentClassReview() {
 
     async function load() {
       try {
-        const [classRes, reportRes] = await Promise.all([
+        const [classRes, reportRes, eventsRes] = await Promise.all([
           api.get(`/api/classes/${classId}`),
           api.get(`/api/classes/${classId}/report/${user.id}`),
+          api.get(`/api/classes/${classId}/attention-events`),
         ]);
         if (!cancelled) {
           setCls(classRes.data.class);
           setStudentData(reportRes.data.student_data || null);
+          setAttentionEvents(eventsRes.data.events || []);
         }
       } catch {}
       finally { if (!cancelled) setLoading(false); }
@@ -36,8 +40,7 @@ export default function StudentClassReview() {
     return () => { cancelled = true; };
   }, [classId, user?.id]);
 
-  // Distraction events from the report already include summary text — no
-  // extra request needed. Adapt shape so AttentionTimeline receives it.
+  // Lista de distrações (com resumo) — alimenta a lista de resumos e o download.
   const events = (studentData?.distraction_events || []).map((evt, i) => ({
     id: i,
     status: 'distracted',
@@ -47,6 +50,27 @@ export default function StudentClassReview() {
     monitoring_mode: evt.monitoring_mode,
     summary: evt.summary,
   }));
+
+  // Timeline REAL: sequência completa de eventos do aluno (atento, distraído,
+  // sem câmera...) com os status verdadeiros — não só as distrações. Anexa o
+  // resumo aos segmentos de distração (casando started_at, ambos em ISO) para
+  // que o clique abra o painel lateral.
+  const summaryByStart = {};
+  (studentData?.distraction_events || []).forEach((evt) => {
+    if (evt.started_at) summaryByStart[evt.started_at] = evt;
+  });
+  const timelineEvents = attentionEvents.map((e, i) => {
+    const match = e.status === 'distracted' ? summaryByStart[e.started_at] : null;
+    return {
+      id: e.id ?? i,
+      status: e.status,
+      started_at: e.started_at,
+      ended_at: e.ended_at,
+      duration_seconds: match?.duration_seconds,
+      monitoring_mode: e.monitoring_mode,
+      summary: match?.summary,
+    };
+  });
 
   const handleDistractionClick = useCallback((event) => {
     setSidePanel(event);
@@ -126,15 +150,15 @@ export default function StudentClassReview() {
           {/* Timeline */}
           <div className={`p-5 ${cardBase} mb-8`}>
             <h2 className="text-base font-semibold mb-4 text-gray-900 dark:text-[#F1F5F9]">Linha do Tempo de Atenção</h2>
-            {events.length > 0 ? (
+            {timelineEvents.length > 0 ? (
               <AttentionTimeline
-                events={events}
+                events={timelineEvents}
                 totalDurationMinutes={totalDuration}
                 onPeriodClick={handleDistractionClick}
               />
             ) : (
               <p className="text-sm text-gray-500 dark:text-[#64748B] text-center py-8">
-                Nenhum evento de desatenção registrado. Parabéns!
+                Nenhum dado de atenção registrado nesta aula.
               </p>
             )}
           </div>
@@ -172,6 +196,9 @@ export default function StudentClassReview() {
               </div>
             </div>
           )}
+
+          {/* Transcrição completa da aula */}
+          <TranscriptPanel classId={classId} />
 
           <div className="text-center">
             <button

@@ -1,7 +1,32 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router';
+import {
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  ReferenceLine, BarChart, Bar, Cell,
+} from 'recharts';
 import Layout from '../../components/Layout';
+import TranscriptPanel from '../../components/TranscriptPanel';
 import api from '../../services/api';
+
+const MODE_PT = {
+  full_attention: 'Atenção Total',
+  activity: 'Atividade',
+  exam: 'Prova',
+  break: 'Intervalo',
+};
+
+// Cor de atenção por faixa de % (verde / âmbar / vermelho).
+const attColor = (pct) => (pct >= 70 ? '#22C55E' : pct >= 40 ? '#F59E0B' : '#EF4444');
+
+function ChartTooltip({ active, payload, label, suffix }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-lg bg-[#0F172A] border border-[#334155] px-3 py-2 text-xs text-[#F1F5F9] shadow-lg">
+      <p className="m-0 font-semibold">{label}{suffix}</p>
+      <p className="m-0 text-[#7DB8F0]">{payload[0].value}% de atenção</p>
+    </div>
+  );
+}
 
 export default function TeacherClassReport() {
   const { id } = useParams();
@@ -41,6 +66,25 @@ export default function TeacherClassReport() {
   const { overview, students, title, duration_minutes } = report;
   const cardBase = "rounded-xl bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-[#334155]";
 
+  // Dados para a timeline (descarta minutos sem ninguém presente).
+  const timeline = (report.attention_timeline || []).filter(p => p.attention_pct !== null);
+
+  // Marcadores de troca de modo (ignora o primeiro modo, que começa em 0).
+  const modeMarkers = report.started_at
+    ? (overview.monitoring_modes_used || []).slice(1).map(m => ({
+        minute: Math.round((new Date(m.started_at) - new Date(report.started_at)) / 60000),
+        label: MODE_PT[m.mode] || m.mode,
+      })).filter(m => m.minute > 0)
+    : [];
+
+  // Ranking de alunos por atenção (maior -> menor) para o gráfico de barras.
+  const ranking = [...students]
+    .map(s => ({
+      name: (s.student_name || `Aluno #${s.student_id}`).split(' ')[0],
+      pct: s.attention_percentage,
+    }))
+    .sort((a, b) => b.pct - a.pct);
+
   return (
     <Layout role="teacher">
       <div className="mb-6">
@@ -48,22 +92,100 @@ export default function TeacherClassReport() {
         <p className="text-sm text-gray-500 dark:text-[#64748B] m-0">Duração: {duration_minutes} minutos</p>
       </div>
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4 mb-8">
-        <div className={`p-5 ${cardBase} text-center`}>
-          <p className="text-3xl font-bold m-0 text-[#1B4F81] dark:text-[#7DB8F0]">{overview.total_present}</p>
-          <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Alunos presentes</p>
-        </div>
-        <div className={`p-5 ${cardBase} text-center`}>
-          <p className="text-3xl font-bold m-0 text-red-500">{overview.total_absent}</p>
-          <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Alunos ausentes</p>
-        </div>
+      {/* Overview Cards — métricas de atenção/valor (sem censo de alunos, LGPD) */}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4 mb-4">
         <div className={`p-5 ${cardBase} text-center`}>
           <p className={`text-3xl font-bold m-0 ${overview.average_attention_percentage >= 70 ? 'text-green-500' : overview.average_attention_percentage >= 40 ? 'text-amber-500' : 'text-red-500'}`}>
             {overview.average_attention_percentage}%
           </p>
           <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Atenção média</p>
         </div>
+        <div className={`p-5 ${cardBase} text-center`}>
+          <p className="text-3xl font-bold m-0 text-[#1B4F81] dark:text-[#7DB8F0]">{duration_minutes}<span className="text-base font-semibold"> min</span></p>
+          <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Duração da aula</p>
+        </div>
+        <div className={`p-5 ${cardBase} text-center`}>
+          <p className="text-3xl font-bold m-0 text-amber-500">{overview.total_distraction_events ?? 0}</p>
+          <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Momentos de desatenção</p>
+        </div>
+        <div className={`p-5 ${cardBase} text-center`}>
+          <p className="text-3xl font-bold m-0 text-[#4A90D9]">{overview.total_summaries ?? 0}</p>
+          <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Resumos recuperados</p>
+        </div>
+      </div>
+
+      {/* Nota LGPD — privacy by design */}
+      <div className="flex items-start gap-2 mb-8 px-4 py-3 rounded-lg bg-[#E8F0FA] dark:bg-[#1B4F81]/20 border border-[#4A90D9]/30">
+        <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-[#4A90D9]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+        <p className="text-xs text-[#1B4F81] dark:text-[#7DB8F0] m-0 leading-relaxed">
+          <strong>Privacidade (LGPD):</strong> os dados individuais abaixo referem-se apenas a alunos que acompanharam pela própria conta, com webcam aberta. A câmera da sala mede atenção de forma <strong>anônima e agregada</strong> — sem identificar ou contar alunos.
+        </p>
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+        {/* Attention timeline */}
+        {timeline.length > 1 && (
+          <div className={`p-5 ${cardBase} lg:col-span-2`}>
+            <h2 className="text-base font-semibold mb-1 text-gray-900 dark:text-[#F1F5F9]">Atenção da turma ao longo da aula</h2>
+            <p className="text-xs text-gray-500 dark:text-[#64748B] mb-4 m-0">% de alunos atentos a cada minuto</p>
+            <ResponsiveContainer width="100%" height={240}>
+              <AreaChart data={timeline} margin={{ top: 5, right: 8, left: -16, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="attGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#4A90D9" stopOpacity={0.5} />
+                    <stop offset="100%" stopColor="#4A90D9" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" strokeOpacity={0.4} vertical={false} />
+                <XAxis
+                  dataKey="minute" tickFormatter={(m) => `${m}m`}
+                  stroke="#64748B" fontSize={11} tickLine={false} axisLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  domain={[0, 100]} tickFormatter={(v) => `${v}%`}
+                  stroke="#64748B" fontSize={11} tickLine={false} axisLine={false} width={42}
+                />
+                <Tooltip content={<ChartTooltip suffix="min" />} />
+                {modeMarkers.map((mk, i) => (
+                  <ReferenceLine
+                    key={i} x={mk.minute} stroke="#7DB8F0" strokeDasharray="4 4"
+                    label={{ value: mk.label, position: 'insideTopRight', fill: '#7DB8F0', fontSize: 10 }}
+                  />
+                ))}
+                <Area
+                  type="monotone" dataKey="attention_pct" stroke="#4A90D9"
+                  strokeWidth={2} fill="url(#attGrad)" connectNulls dot={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Per-student ranking */}
+        {ranking.length > 0 && (
+          <div className={`p-5 ${cardBase} ${timeline.length > 1 ? '' : 'lg:col-span-3'}`}>
+            <h2 className="text-base font-semibold mb-1 text-gray-900 dark:text-[#F1F5F9]">Atenção por aluno</h2>
+            <p className="text-xs text-gray-500 dark:text-[#64748B] mb-4 m-0">% de atenção na aula</p>
+            <ResponsiveContainer width="100%" height={Math.max(180, ranking.length * 38)}>
+              <BarChart data={ranking} layout="vertical" margin={{ top: 0, right: 28, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" strokeOpacity={0.4} horizontal={false} />
+                <XAxis type="number" domain={[0, 100]} hide />
+                <YAxis
+                  type="category" dataKey="name" width={72}
+                  stroke="#64748B" fontSize={12} tickLine={false} axisLine={false}
+                />
+                <Tooltip content={<ChartTooltip suffix="" />} cursor={{ fill: '#33415533' }} />
+                <Bar dataKey="pct" radius={[0, 4, 4, 0]} label={{ position: 'right', fill: '#94A3B8', fontSize: 11, formatter: (v) => `${v}%` }}>
+                  {ranking.map((r, i) => <Cell key={i} fill={attColor(r.pct)} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
 
       {/* Modes Used */}
@@ -80,13 +202,41 @@ export default function TeacherClassReport() {
         </div>
       )}
 
+      {/* Transcrição completa da aula */}
+      <TranscriptPanel classId={classId} />
+
+      {/* Materiais da aula — placeholder (ideia: professor anexa slides/PDFs
+          apresentados, e o aluno acompanha o conteúdo junto da transcrição) */}
+      <div className={`${cardBase} p-5 mb-8 mt-8`}>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold m-0 mb-1 text-gray-900 dark:text-[#F1F5F9]">Materiais da aula</h2>
+            <p className="text-xs text-gray-500 dark:text-[#64748B] m-0 max-w-md">
+              Anexe os slides, PDFs e arquivos apresentados em aula. O aluno acompanha o conteúdo junto da transcrição ao recuperar o que perdeu.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled
+            title="Em breve"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-[#4A90D9]/50 text-[#4A90D9] dark:text-[#7DB8F0] text-sm font-semibold opacity-70 cursor-not-allowed"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Adicionar materiais
+            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#E8F0FA] dark:bg-[#1B4F81]/40 text-[#1B4F81] dark:text-[#7DB8F0]">em breve</span>
+          </button>
+        </div>
+      </div>
+
       {/* Students List */}
       <div className={`${cardBase} overflow-hidden`}>
         <h2 className="text-base font-semibold p-4 border-b border-gray-200 dark:border-[#334155] m-0 text-gray-900 dark:text-[#F1F5F9]">
-          Alunos ({students.length})
+          Alunos pela própria conta ({students.length})
         </h2>
         {students.length === 0 ? (
-          <p className="py-12 text-center text-gray-500 dark:text-[#64748B] text-sm m-0">Nenhum aluno participou desta aula.</p>
+          <p className="py-12 text-center text-gray-500 dark:text-[#64748B] text-sm m-0">Nenhum aluno acompanhou pela própria conta nesta aula.</p>
         ) : (
           <div>
             {students.map((student, idx) => (
@@ -100,7 +250,7 @@ export default function TeacherClassReport() {
                   }`}
                 >
                   <div className="flex-1 min-w-0 mr-4">
-                    <p className="text-sm font-semibold m-0 mb-1.5 text-gray-900 dark:text-[#F1F5F9]">Aluno #{student.student_id}</p>
+                    <p className="text-sm font-semibold m-0 mb-1.5 text-gray-900 dark:text-[#F1F5F9]">{student.student_name || `Aluno #${student.student_id}`}</p>
                     <div className="h-1.5 rounded-full bg-gray-200 dark:bg-[#334155] max-w-[300px] overflow-hidden">
                       <div
                         className={`h-full rounded-full ${student.attention_percentage >= 70 ? 'bg-green-500' : student.attention_percentage >= 40 ? 'bg-amber-500' : 'bg-red-500'}`}

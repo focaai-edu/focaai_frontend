@@ -1,192 +1,102 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import socket from '../services/socket';
+import { isDistracted } from '../lib/attentionAlgo';
 
 /**
- * Default thresholds per monitoring mode.
- * - full_attention: strict — 30s distraction threshold
- * - activity: lenient — 120s distraction threshold, pitch_down disabled
- * - exam: strictest — 15s for sideways glance
- * - break: no attention monitoring
+ * useAttention — decide o status de atenção da webcam do aluno.
+ *
+ * DECISÃO: usa EXATAMENTE o mesmo algoritmo da câmera da sala (/room) —
+ * `isDistracted()` de lib/attentionAlgo.js, instantâneo por ângulo/EAR. O mesmo
+ * rosto, no mesmo ângulo, é classificado de forma idêntica nas duas telas.
+ *
+ * ESTABILIZAÇÃO: como aqui o status é PERSISTIDO (vira attention_event), uma troca
+ * só é confirmada depois de se manter por `STABLE_MS`. Isso evita flicker perto do
+ * limiar virar enxurrada de eventos — sem alterar a fronteira de decisão.
+ *
+ * ESPECÍFICO DO ALUNO (não existe no /room): status `no_camera` por ausência de
+ * rosto e emissão de `attention_update` apenas na troca confirmada de status.
  */
-const DEFAULT_THRESHOLDS = {
-  full_attention: {
-    yaw: { limit: 25, time_seconds: 5 },
-    pitchUp: { limit: 20, time_seconds: 4 },
-    pitchDown: { limit: 15, time_seconds: 4 },
-    roll: { limit: 30, time_seconds: 5 },
-    noFace: { time_seconds: 8 },
-    distraction_threshold: 30,
-  },
-  activity: {
-    yaw: { limit: 25, time_seconds: 10 },
-    pitchUp: { limit: 25, time_seconds: 8 },
-    pitchDown: null, // Disabled — students may look down during activity
-    roll: { limit: 35, time_seconds: 8 },
-    noFace: { time_seconds: 8 },
-    distraction_threshold: 120,
-  },
-  exam: {
-    yaw: { limit: 20, time_seconds: 3 },
-    pitchUp: { limit: 20, time_seconds: 5 },
-    pitchDown: null, // Students write during exam
-    roll: { limit: 25, time_seconds: 5 },
-    noFace: { time_seconds: 8 },
-    distraction_threshold: 15,
-  },
-  break: null,
-};
 
-/**
- * Checks if a pose value exceeds a threshold.
- * Returns true if the value is outside the acceptable range.
- */
-function exceedsThreshold(value, criterion) {
-  if (!criterion) return false;
-  const { limit } = criterion;
-  return Math.abs(value) > limit;
-}
+const STABLE_MS = 1000;       // tempo que um novo status precisa se manter p/ valer
+const NO_FACE_SECONDS = 8;    // segundos sem rosto até marcar `no_camera`
 
 export function useAttention(classId, studentId, monitoringMode = 'full_attention', source = 'webcam') {
   const [status, setStatus] = useState('disconnected');
-  const [customThresholds, setCustomThresholds] = useState(null);
   const [earValue, setEarValue] = useState(1.0);
   const [poseValues, setPoseValues] = useState({ yaw: 0, pitch: 0, roll: 0 });
 
-  // Timer refs for non-cumulative tracking
-  const timers = useRef({
-    yaw: 0,
-    pitchDown: 0,
-    pitchUp: 0,
-    roll: 0,
-    noFace: 0,
-  });
+  const currentStatus = useRef(null);     // status confirmado (exibido + persistido)
+  const candidate = useRef(null);         // status pendente de confirmação
+  const candidateSince = useRef(0);       // quando o candidato apareceu
+  const noFaceSeconds = useRef(0);
   const lastFrameTime = useRef(Date.now());
-  const currentStatus = useRef(null);
-  const distractionStart = useRef(null);
-  const drowsyFrames = useRef(0);
 
-  const getModeThresholds = useCallback(() => {
-    if (customThresholds && customThresholds[monitoringMode]) {
-      return { ...DEFAULT_THRESHOLDS[monitoringMode], ...customThresholds[monitoringMode] };
-    }
-    return DEFAULT_THRESHOLDS[monitoringMode];
-  }, [monitoringMode, customThresholds]);
+  const emitUpdate = useCallback((newStatus, pose) => {
+    if (!socket.connected) return;
+    socket.emit('attention_update', {
+      class_id: classId,
+      student_id: studentId,
+      status: newStatus,
+      source,
+      monitoring_mode: monitoringMode,
+      ...(pose ? { yaw: pose.yaw, pitch: pose.pitch, roll: pose.roll, ear: pose.ear } : {}),
+    });
+  }, [classId, studentId, source, monitoringMode]);
 
-  const processPose = useCallback((pose) => {
-    const modeThresholds = getModeThresholds();
-    if (!modeThresholds) {
-      // Break mode — no monitoring
-      setStatus('attentive');
+  // Confirma um status (com estabilização) e emite na troca.
+  const commit = useCallback((newStatus, pose) => {
+    if (newStatus === currentStatus.current) {
+      candidate.current = newStatus; // já é o status atual — nada pendente
       return;
     }
-
     const now = Date.now();
-    const dt = (now - lastFrameTime.current) / 1000; // seconds since last frame
-    lastFrameTime.current = now;
+    // Primeira classificação é imediata; trocas seguintes exigem estabilidade.
+    if (currentStatus.current !== null) {
+      if (newStatus !== candidate.current) {
+        candidate.current = newStatus;
+        candidateSince.current = now;
+        return;
+      }
+      if (now - candidateSince.current < STABLE_MS) return;
+    }
+    currentStatus.current = newStatus;
+    candidate.current = newStatus;
+    setStatus(newStatus);
+    emitUpdate(newStatus, pose);
+  }, [emitUpdate]);
 
+  const processPose = useCallback((pose) => {
+    lastFrameTime.current = Date.now();
     setPoseValues({ yaw: pose.yaw, pitch: pose.pitch, roll: pose.roll });
     setEarValue(pose.ear);
 
-    let isDistracted = false;
+    // Intervalo: sem monitoramento — sempre atento (igual ao /room).
+    const raw = monitoringMode === 'break'
+      ? 'attentive'
+      : (isDistracted(pose.yaw, pose.pitch, pose.ear, monitoringMode) ? 'distracted' : 'attentive');
 
-    // Check each criterion
-    const criteria = [
-      { key: 'yaw', value: Math.abs(pose.yaw), threshold: modeThresholds.yaw },
-      { key: 'roll', value: Math.abs(pose.roll), threshold: modeThresholds.roll },
-      { key: 'pitchUp', value: pose.pitch > 0 ? pose.pitch : 0, threshold: modeThresholds.pitchUp },
-      { key: 'pitchDown', value: pose.pitch < 0 ? -pose.pitch : 0, threshold: modeThresholds.pitchDown },
-    ];
-
-    for (const { key, value, threshold } of criteria) {
-      if (threshold && value > threshold.limit) {
-        timers.current[key] += dt;
-        if (timers.current[key] >= threshold.time_seconds) {
-          isDistracted = true;
-        }
-      } else {
-        // Reset timer if within threshold (non-cumulative)
-        timers.current[key] = 0;
-      }
-    }
-
-    // No face timer is tracked by the caller (processNoFace)
-
-    // Drowsiness check
-    if (pose.ear < 0.2) {
-      drowsyFrames.current += 1;
-      if (drowsyFrames.current >= 90) { // ~3 seconds at 30fps
-        isDistracted = true;
-        // Drowsiness event will be logged
-      }
-    } else {
-      drowsyFrames.current = Math.max(0, drowsyFrames.current - 1);
-    }
-
-    // Determine status
-    let newStatus = 'attentive';
-    if (isDistracted) {
-      newStatus = 'distracted';
-    }
-
-    // Only emit on status change
-    if (newStatus !== currentStatus.current) {
-      currentStatus.current = newStatus;
-      setStatus(newStatus);
-
-      // Emit attention update via WebSocket
-      if (socket.connected) {
-        socket.emit('attention_update', {
-          class_id: classId,
-          student_id: studentId,
-          status: newStatus,
-          source: source,
-          monitoring_mode: monitoringMode,
-          yaw: pose.yaw,
-          pitch: pose.pitch,
-          roll: pose.roll,
-          ear: pose.ear,
-        });
-      }
-
-      if (newStatus === 'distracted') {
-        distractionStart.current = now;
-      } else if (newStatus === 'attentive' && distractionStart.current) {
-        // Distraction ended — duration is in attention_service
-        distractionStart.current = null;
-      }
-    }
-  }, [classId, studentId, source, monitoringMode, getModeThresholds]);
+    commit(raw, pose);
+  }, [monitoringMode, commit]);
 
   const processNoFace = useCallback(() => {
-    const modeThresholds = getModeThresholds();
-    if (!modeThresholds) return;
+    if (monitoringMode === 'break') return;
 
     const now = Date.now();
     const dt = (now - lastFrameTime.current) / 1000;
     lastFrameTime.current = now;
 
-    timers.current.noFace += dt;
-    if (timers.current.noFace >= (modeThresholds.noFace?.time_seconds || 8)) {
-      if (currentStatus.current !== 'no_camera') {
-        currentStatus.current = 'no_camera';
-        setStatus('no_camera');
-
-        if (socket.connected) {
-          socket.emit('attention_update', {
-            class_id: classId,
-            student_id: studentId,
-            status: 'no_camera',
-            source: source,
-            monitoring_mode: monitoringMode,
-          });
-        }
-      }
+    noFaceSeconds.current += dt;
+    if (noFaceSeconds.current >= NO_FACE_SECONDS && currentStatus.current !== 'no_camera') {
+      currentStatus.current = 'no_camera';
+      candidate.current = 'no_camera';
+      setStatus('no_camera');
+      emitUpdate('no_camera', null);
     }
-  }, [classId, studentId, source, monitoringMode, getModeThresholds]);
+  }, [monitoringMode, emitUpdate]);
 
-  // Reset face-not-found timer when face is found
+  // Rosto reapareceu — zera o contador de ausência.
   const resetNoFace = useCallback(() => {
-    timers.current.noFace = 0;
+    noFaceSeconds.current = 0;
   }, []);
 
   return {
@@ -196,7 +106,6 @@ export function useAttention(classId, studentId, monitoringMode = 'full_attentio
     processPose,
     processNoFace,
     resetNoFace,
-    setCustomThresholds,
     currentStatus: currentStatus.current,
   };
 }
