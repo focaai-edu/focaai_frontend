@@ -1,25 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import socket from '../../services/socket';
 import api from '../../services/api';
+import { MODE_LABELS, pctColor } from '../../lib/attentionAlgo';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const LS_CAMERAS_KEY = 'foca_cameras';
 const LS_ACTIVE_KEY  = 'foca_active_camera_id';
 
-const MODE_THRESHOLDS = {
-  full_attention: { yaw: 25, pitch_up: 20, pitch_down: 15, ear: 0.20 },
-  activity:       { yaw: 25, pitch_up: 25, pitch_down: null, ear: 0.18 },
-  exam:           { yaw: 20, pitch_up: 20, pitch_down: null, ear: 0.22 },
-  break:          null,
-};
-
-const MODE_LABELS = {
-  full_attention: 'Atenção total',
-  activity: 'Atividade',
-  exam: 'Prova',
-  break: 'Intervalo',
-};
+// Frame capture interval sent to backend for detection (ms)
+const FRAME_INTERVAL_MS = 3000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -36,47 +26,6 @@ function normalizeStreamUrl(url) {
   if (!s.startsWith('http://') && !s.startsWith('https://')) s = `http://${s}`;
   if (s.endsWith('/video')) return s;
   return `${s}/video`;
-}
-
-function computeHeadPose(m) {
-  if (!m || m.length < 16) return { yaw: 0, pitch: 0, roll: 0 };
-  const RAD2DEG = 180 / Math.PI;
-  const sy = Math.sqrt(m[0] * m[0] + m[1] * m[1]);
-  return {
-    yaw:   Math.atan2(-m[2], sy) * RAD2DEG,
-    pitch: Math.atan2(m[6], m[10]) * RAD2DEG,
-    roll:  Math.atan2(m[1], m[0]) * RAD2DEG,
-  };
-}
-
-function computeEAR(landmarks) {
-  const L = [33, 160, 158, 133, 153, 144];
-  const R = [362, 385, 387, 263, 373, 380];
-  function ear(idx) {
-    const p = idx.map(i => landmarks[i]);
-    if (p.some(x => !x)) return 1.0;
-    const A = Math.hypot(p[1].x - p[5].x, p[1].y - p[5].y);
-    const B = Math.hypot(p[2].x - p[4].x, p[2].y - p[4].y);
-    const C = Math.hypot(p[0].x - p[3].x, p[0].y - p[3].y);
-    return C === 0 ? 1.0 : (A + B) / (2 * C);
-  }
-  return (ear(L) + ear(R)) / 2;
-}
-
-function isDistracted(yaw, pitch, ear, mode) {
-  const t = MODE_THRESHOLDS[mode || 'full_attention'];
-  if (!t) return false;
-  if (Math.abs(yaw) > t.yaw) return true;
-  if (t.pitch_up !== null && pitch > t.pitch_up) return true;
-  if (t.pitch_down !== null && pitch < -t.pitch_down) return true;
-  if (t.ear !== null && ear < t.ear) return true;
-  return false;
-}
-
-function pctColor(pct) {
-  if (pct >= 75) return { text: 'text-green-400', hex: '#22C55E', bg: 'bg-green-500/90' };
-  if (pct >= 50) return { text: 'text-amber-400', hex: '#F59E0B', bg: 'bg-amber-500/90' };
-  return { text: 'text-red-400', hex: '#EF4444', bg: 'bg-red-500/90' };
 }
 
 // ── Camera Form Modal ─────────────────────────────────────────────────────────
@@ -201,8 +150,6 @@ export default function RoomCamera() {
 
   // Monitoring
   const [monitoring, setMonitoring] = useState(false);
-  const [mpReady, setMpReady]       = useState(false);
-  const [mpError, setMpError]       = useState('');
   const [streamOk, setStreamOk]     = useState(false);
   const [aggregate, setAggregate]   = useState(null);
   const [debugPose, setDebugPose]   = useState(null);
@@ -211,14 +158,12 @@ export default function RoomCamera() {
   const [micActive, setMicActive] = useState(false);
 
   // Refs
-  const imgRef        = useRef(null);   // MJPEG <img> via proxy (display + captura MediaPipe)
-  const overlayRef    = useRef(null);   // face-box canvas
-  const captureRef    = useRef(null);   // hidden canvas for MediaPipe
-  const landmarkerRef = useRef(null);
+  const imgRef        = useRef(null);
+  const overlayRef    = useRef(null);
+  const captureRef    = useRef(null);
   const intervalRef   = useRef(null);
   const currentModeRef       = useRef('full_attention');
   const selectedClassIdRef   = useRef(null);
-  const lastKnownBoxesRef    = useRef({ boxes: [], at: 0 });
   const transcriptEndRef     = useRef(null);
   const micStreamRef         = useRef(null);
   const recorderRef          = useRef(null);
@@ -231,8 +176,6 @@ export default function RoomCamera() {
   const isWebcam     = activeCamera?.stream_url === '__webcam__';
   const streamUrl    = isWebcam ? '' : normalizeStreamUrl(activeCamera?.stream_url || '');
 
-  // ── Set img src only when streamUrl changes (avoids reconnect loop) ────────
-  // Tudo via proxy: uma única conexão ao DroidCam, CORS habilitado para MediaPipe
   const proxyUrl = streamUrl
     ? `http://localhost:5000/api/camera/stream?url=${encodeURIComponent(streamUrl)}`
     : '';
@@ -251,7 +194,6 @@ export default function RoomCamera() {
     else localStorage.removeItem(LS_ACTIVE_KEY);
   }, [activeCameraId]);
 
-  // Auto-select first camera
   useEffect(() => {
     if (!activeCameraId && cameras.length > 0) setActiveCamId(cameras[0].id);
     if (activeCameraId && !cameras.find(c => c.id === activeCameraId))
@@ -303,7 +245,6 @@ export default function RoomCamera() {
       webcamStreamRef.current = null;
       return;
     }
-    // Reuse existing live stream (e.g. user re-clicked the same webcam camera)
     const existing = webcamStreamRef.current;
     if (existing && existing.getTracks().some(t => t.readyState === 'live')) {
       if (videoRef.current && videoRef.current.srcObject !== existing) {
@@ -348,42 +289,23 @@ export default function RoomCamera() {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcriptions]);
 
-  // ── MediaPipe init ────────────────────────────────────────────────────────
+  // ── Monitoring mode sync ──────────────────────────────────────────────────
 
   useEffect(() => {
-    let cancelled = false;
-    async function init() {
-      try {
-        const { FilesetResolver, FaceLandmarker } = await import(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs'
-        );
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
-        );
-        const fl = await FaceLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-            delegate: 'CPU',
-          },
-          outputFaceBlendshapes: false,
-          outputFacialTransformationMatrixes: true,
-          runningMode: 'VIDEO',
-          numFaces: 10,
-          minFaceDetectionConfidence: 0.1,
-          minFacePresenceScore: 0.1,
-          minTrackingConfidence: 0.1,
-        });
-        if (!cancelled) { landmarkerRef.current = fl; setMpReady(true); }
-      } catch (err) {
-        if (!cancelled) setMpError('Erro ao carregar MediaPipe: ' + err.message);
-      }
-    }
-    init();
-    return () => {
-      cancelled = true;
-      landmarkerRef.current?.close();
-      landmarkerRef.current = null;
+    const onModeChanged = (data) => {
+      if (selectedClassIdRef.current && data.class_id !== selectedClassIdRef.current) return;
+      currentModeRef.current = data.mode;
+      setLiveClass(prev => prev ? { ...prev, monitoring_mode: data.mode } : prev);
     };
+    socket.on('monitoring_mode_changed', onModeChanged);
+    return () => socket.off('monitoring_mode_changed', onModeChanged);
+  }, []);
+
+  const changeMode = useCallback((mode) => {
+    currentModeRef.current = mode;
+    setLiveClass(prev => prev ? { ...prev, monitoring_mode: mode } : prev);
+    const cid = selectedClassIdRef.current;
+    if (cid) socket.emit('change_monitoring_mode', { class_id: cid, mode });
   }, []);
 
   // ── Drawing ───────────────────────────────────────────────────────────────
@@ -405,19 +327,73 @@ export default function RoomCamera() {
     });
   }, []);
 
-  // ── Detection loop ────────────────────────────────────────────────────────
+  // ── Backend socket events (detection results) ─────────────────────────────
 
-  const processFrame = useCallback(() => {
-    const capture = captureRef.current;
-    if (!capture || !landmarkerRef.current) return;
+  useEffect(() => {
+    const onRoomAttention = (data) => {
+      if (selectedClassIdRef.current && data.class_id !== selectedClassIdRef.current) return;
+      const total = data.total_faces || 0;
+      const att   = data.attentive   || 0;
+      const dist  = data.distracted  || 0;
+      const pct   = total > 0 ? Math.round(att / total * 100) : 0;
+      setAggregate(total > 0 ? { total, attentive: att, distracted: dist, pct } : null);
+    };
+    socket.on('room_attention_update', onRoomAttention);
+    return () => socket.off('room_attention_update', onRoomAttention);
+  }, []);
+
+  useEffect(() => {
+    const onFacesIdentified = (data) => {
+      if (selectedClassIdRef.current && data.class_id !== selectedClassIdRef.current) return;
+      const { faces = [], img_w: W, img_h: H } = data;
+      if (!W || !H) return;
+
+      // Normalize pixel bbox to 0-1 for drawFaceBoxes
+      const boxes = faces.map(f => ({
+        x: f.bbox.x / W,
+        y: f.bbox.y / H,
+        w: f.bbox.w / W,
+        h: f.bbox.h / H,
+        distracted: f.status === 'distracted',
+      }));
+      drawFaceBoxes(boxes, W, H);
+
+      if (faces.length > 0 && faces[0].yaw !== undefined) {
+        setDebugPose({ yaw: Number(faces[0].yaw).toFixed(1), pitch: Number(faces[0].pitch).toFixed(1) });
+      } else {
+        setDebugPose(null);
+      }
+    };
+    socket.on('faces_identified', onFacesIdentified);
+    return () => socket.off('faces_identified', onFacesIdentified);
+  }, [drawFaceBoxes]);
+
+  // ── Frame capture + send ──────────────────────────────────────────────────
+
+  const captureAndSend = useCallback(() => {
+    if (currentModeRef.current === 'break') {
+      if (overlayRef.current) {
+        const ctx = overlayRef.current.getContext('2d');
+        ctx.clearRect(0, 0, overlayRef.current.width, overlayRef.current.height);
+      }
+      setAggregate(null);
+      setDebugPose(null);
+      return;
+    }
+
+    const cid = selectedClassIdRef.current;
+    if (!cid) return;
 
     const source = isWebcamRef.current ? videoRef.current : imgRef.current;
     if (!source) return;
     if (isWebcamRef.current) {
-      if (source.readyState < 2) return;
+      if (!source.srcObject || source.readyState < 2) return;
     } else {
       if (!source.complete || source.naturalWidth === 0) return;
     }
+
+    const capture = captureRef.current;
+    if (!capture) return;
 
     const W = (source.videoWidth  || source.naturalWidth)  || 640;
     const H = (source.videoHeight || source.naturalHeight) || 480;
@@ -425,79 +401,35 @@ export default function RoomCamera() {
     capture.height = H;
     capture.getContext('2d').drawImage(source, 0, 0, W, H);
 
-    let results;
-    try { results = landmarkerRef.current.detectForVideo(capture, Date.now()); }
-    catch (e) { console.error('[RoomCamera] detect error:', e.message); return; }
-
-    const matrices  = results.facialTransformationMatrixes || [];
-    const landmarks = results.faceLandmarks || [];
-    const faceCount = Math.max(matrices.length, landmarks.length);
-    const mode      = currentModeRef.current;
-
-    let attentive = 0, distracted = 0;
-    const faceBoxes = [];
-
-    for (let i = 0; i < faceCount; i++) {
-      const mat  = matrices[i];
-      const lms  = landmarks[i];
-      const pose = mat ? computeHeadPose(mat.data) : { yaw: 0, pitch: 0, roll: 0 };
-      const ear  = lms ? computeEAR(lms) : 1.0;
-      // No transformation matrix but landmarks present = head turned beyond pose estimation range → distracted
-      const dist = !mat ? !!lms : isDistracted(pose.yaw, pose.pitch, ear, mode);
-      if (dist) distracted++; else attentive++;
-
-      if (lms?.length > 0) {
-        const xs = lms.map(p => p.x), ys = lms.map(p => p.y);
-        faceBoxes.push({ x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), distracted: dist });
-      }
-      if (i === 0 && mat) setDebugPose({ yaw: pose.yaw.toFixed(1), pitch: pose.pitch.toFixed(1), ear: ear.toFixed(3) });
-    }
-
-    const now = Date.now();
-    const GHOST_TTL = 2500;
-
-    if (faceBoxes.length > 0) {
-      lastKnownBoxesRef.current = { boxes: faceBoxes, at: now };
-    }
-
-    // Persist recently-lost faces as distracted ghosts for up to GHOST_TTL ms
-    const age = now - lastKnownBoxesRef.current.at;
-    const ghostBoxes = (age > 0 && age < GHOST_TTL && faceBoxes.length < lastKnownBoxesRef.current.boxes.length)
-      ? lastKnownBoxesRef.current.boxes.slice(faceBoxes.length).map(b => ({ ...b, distracted: true }))
-      : [];
-
-    const ghostCount = ghostBoxes.length;
-    const total = attentive + distracted + ghostCount;
-    const pct   = total > 0 ? Math.round(attentive / total * 100) : 0;
-    setAggregate(total > 0 ? { total, attentive, distracted: distracted + ghostCount, pct } : null);
-    drawFaceBoxes([...faceBoxes, ...ghostBoxes], W, H);
-
-    const cid = selectedClassIdRef.current;
-    if (cid && total > 0) {
-      socket.emit('room_attention', { class_id: cid, total_faces: total, attentive, distracted: distracted + ghostCount, attention_pct: pct, monitoring_mode: mode });
-    }
-  }, [drawFaceBoxes]);
+    const frame_base64 = capture.toDataURL('image/jpeg', 0.75).split(',')[1];
+    socket.emit('room_frame', { class_id: cid, frame_base64 });
+  }, []);
 
   useEffect(() => {
-    if (!monitoring || !mpReady) return;
-    lastKnownBoxesRef.current = { boxes: [], at: 0 };
-    intervalRef.current = setInterval(processFrame, 200);
+    if (!monitoring) return;
+
+    setAggregate(null);
+    setDebugPose(null);
+
+    // Send first frame immediately, then on interval
+    captureAndSend();
+    intervalRef.current = setInterval(captureAndSend, FRAME_INTERVAL_MS);
+
     return () => {
       clearInterval(intervalRef.current);
-      lastKnownBoxesRef.current = { boxes: [], at: 0 };
-      if (recorderRef.current) { recorderRef.current.stop(); recorderRef.current = null; }
-      if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
-      setMicActive(false);
       setAggregate(null);
       setDebugPose(null);
       if (overlayRef.current) {
         const ctx = overlayRef.current.getContext('2d');
         ctx.clearRect(0, 0, overlayRef.current.width, overlayRef.current.height);
       }
+      if (recorderRef.current) { recorderRef.current.stop(); recorderRef.current = null; }
+      if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
+      setMicActive(false);
     };
-  }, [monitoring, mpReady, processFrame]);
+  }, [monitoring, captureAndSend]);
 
-  // ── Room open / close (monitoring + microphone) ───────────────────────────
+  // ── Room open / close ─────────────────────────────────────────────────────
 
   const handleOpenRoom = async () => {
     try {
@@ -505,8 +437,6 @@ export default function RoomCamera() {
       micStreamRef.current = stream;
       setMicActive(true);
 
-      // Use start/stop cycle so each Blob is a complete valid WebM file.
-      // MediaRecorder.start(timeslice) produces fragmented WebM that Groq rejects.
       function recordChunk() {
         if (!micStreamRef.current) return;
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
@@ -625,7 +555,30 @@ export default function RoomCamera() {
         </div>
       )}
 
-      {/* Main — fills remaining height, never grows beyond viewport */}
+      {/* Barra de modos */}
+      {liveClass && (
+        <div className="px-5 py-2 bg-[#1E293B] border-b border-[#334155] flex items-center gap-2 overflow-x-auto flex-shrink-0">
+          <span className="text-xs text-[#64748B] mr-1 flex-shrink-0">Modo:</span>
+          {Object.entries(MODE_LABELS).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => changeMode(key)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap border-none cursor-pointer transition-colors ${
+                (liveClass.monitoring_mode || 'full_attention') === key
+                  ? 'bg-[#4A90D9] text-white'
+                  : 'bg-[#334155] text-[#94A3B8] hover:bg-[#3D4F68]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          {liveClass.monitoring_mode === 'break' && (
+            <span className="text-xs text-amber-400 ml-1 flex-shrink-0 whitespace-nowrap">Detecção pausada</span>
+          )}
+        </div>
+      )}
+
+      {/* Main */}
       <div className="flex-1 flex overflow-hidden relative min-h-0">
 
         {/* Stream area */}
@@ -673,16 +626,21 @@ export default function RoomCamera() {
               {monitoring && (
                 <div className="absolute top-3 left-3 z-10 bg-black/60 text-white text-xs font-mono rounded-md px-3 py-2 space-y-0.5 pointer-events-none">
                   <div>{connected ? '🟢 Socket' : '🔴 Socket desconectado'}</div>
-                  <div>{mpReady ? '🟢 MediaPipe' : (mpError || '🟡 Carregando...')}</div>
+                  <div>🟢 Backend (YuNet)</div>
                   <div>{micActive ? '🎙️ Mic ativo' : '🔇 Sem microfone'}</div>
                   {aggregate && <div>Rostos: {aggregate.total} · Atentos: {aggregate.attentive} · {aggregate.pct}%</div>}
-                  {debugPose && <div>yaw:{debugPose.yaw}° pitch:{debugPose.pitch}° EAR:{debugPose.ear}</div>}
+                  {debugPose && <div>yaw:{debugPose.yaw}° pitch:{debugPose.pitch}°</div>}
                 </div>
               )}
 
               {monitoring && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
-                  {aggregate ? (
+                  {liveClass?.monitoring_mode === 'break' ? (
+                    <div className="flex items-center gap-2 bg-amber-500/90 text-white font-semibold text-sm rounded-full px-4 py-1.5 shadow-lg">
+                      <span className="inline-block w-2.5 h-2.5 rounded-full bg-white" />
+                      Intervalo — detecção pausada
+                    </div>
+                  ) : aggregate ? (
                     <div className={`flex items-center gap-2 ${pctColor(aggregate.pct).bg} text-white font-semibold text-sm rounded-full px-4 py-1.5 shadow-lg`}>
                       <span className="inline-block w-2.5 h-2.5 rounded-full bg-white" />
                       {aggregate.attentive}/{aggregate.total} atentos · {aggregate.pct}%
@@ -690,7 +648,7 @@ export default function RoomCamera() {
                   ) : (
                     <div className="flex items-center gap-2 bg-black/60 text-gray-300 text-sm rounded-full px-4 py-1.5">
                       <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-400 animate-pulse" />
-                      Procurando rostos...
+                      Analisando frame...
                     </div>
                   )}
                 </div>
@@ -732,7 +690,7 @@ export default function RoomCamera() {
           )}
         </div>
 
-        {/* Transcription panel — fixed width, internal scroll */}
+        {/* Transcription panel */}
         <div className="w-[300px] bg-[#1E293B] border-l border-[#334155] flex flex-col flex-shrink-0">
           <div className="px-4 py-3 border-b border-[#334155] flex items-center justify-between flex-shrink-0">
             <h3 className="text-sm font-semibold text-[#F1F5F9]">Transcrição</h3>
@@ -759,7 +717,7 @@ export default function RoomCamera() {
           </div>
         </div>
 
-        {/* Settings overlay — slides over transcription panel */}
+        {/* Settings overlay */}
         {showSettings && (
           <div className="absolute inset-y-0 right-0 w-[300px] bg-[#1E293B] border-l border-[#334155] z-50 flex flex-col shadow-2xl">
             <div className="flex items-center justify-between px-4 py-3 border-b border-[#334155] flex-shrink-0">
@@ -801,7 +759,7 @@ export default function RoomCamera() {
                     {!activeCamera ? 'Configure uma câmera.' :
                      !streamOk ? 'Câmera indisponível.' :
                      !monitoring ? 'Clique em "Abrir Sala".' :
-                     mpReady ? 'Procurando rostos...' : (mpError || 'Carregando MediaPipe...')}
+                     'Procurando rostos...'}
                   </p>
                 )}
               </div>
@@ -849,7 +807,7 @@ export default function RoomCamera() {
                 </div>
               </div>
 
-              <p className="text-[#334155] text-xs">Detecção anônima — nenhuma imagem sai do navegador.</p>
+              <p className="text-[#334155] text-xs">Frames processados no servidor — detecção anônima por padrão.</p>
             </div>
           </div>
         )}
