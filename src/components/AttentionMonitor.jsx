@@ -149,7 +149,7 @@ export default function AttentionMonitor({ classId, monitoringMode = 'full_atten
           <button
             type="button"
             onClick={retryDetector}
-            className="px-3 py-1.5 rounded bg-[#4A90D9] text-white text-sm hover:bg-[#1B4F81] transition-colors"
+            className="px-3 py-1.5 rounded bg-secondary text-white text-sm hover:bg-primary transition-colors"
           >
             Tentar de novo
           </button>

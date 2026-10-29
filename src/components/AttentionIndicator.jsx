@@ -1,30 +1,30 @@
 import { STATUS_LABELS } from '../lib/labels';
 
 const STATUS_COLORS = {
-  attentive: '#22C55E',
-  distracted: '#4A90D9',
-  no_camera: '#F59E0B',
-  disconnected: '#9CA3AF',
+  attentive: 'var(--color-attentive)',
+  distracted: 'var(--color-distracted)',
+  no_camera: 'var(--color-no-camera)',
+  disconnected: 'var(--color-disconnected)',
 };
 
 export default function AttentionIndicator({ status = 'disconnected', showLabel = true, size = 12 }) {
   const key = STATUS_COLORS[status] ? status : 'disconnected';
-  const config = { color: STATUS_COLORS[key], label: STATUS_LABELS[key] };
+  const color = STATUS_COLORS[key];
+  const label = STATUS_LABELS[key] || 'Desconectado';
 
   return (
-    <div className="inline-flex items-center gap-1.5 opacity-90" title={config.label}>
+    <div className="inline-flex items-center gap-1.5 opacity-90" title={label}>
       <span
-        className="rounded-full flex-shrink-0 transition-colors duration-300"
+        className="rounded-full flex-shrink-0 transition-colors duration-200"
         style={{
           width: `${size}px`,
           height: `${size}px`,
-          backgroundColor: config.color,
-          boxShadow: status === 'attentive' ? `0 0 6px ${config.color}` : 'none',
+          backgroundColor: color,
         }}
       />
       {showLabel && (
-        <span className="text-xs font-medium" style={{ color: config.color }}>
-          {config.label}
+        <span className="text-xs font-medium" style={{ color }}>
+          {label}
         </span>
       )}
     </div>
