@@ -196,12 +196,12 @@ export default function TeacherClassLive() {
       </div>
 
       {audio.status === 'error' && (
-        <div className="px-4 md:px-8 py-3 bg-red-50 text-red-600 text-sm border-b border-red-100">
+        <div className="px-4 md:px-8 py-3 bg-red-50 text-red-600 text-sm border-b border-red-100 dark:bg-danger/10 dark:text-red-300 dark:border-danger/30">
           Não foi possível acessar o microfone. A aula continua, mas sem transcrição.
         </div>
       )}
       {error && (
-        <div className="px-4 md:px-8 py-3 bg-red-50 text-red-600 text-sm border-b border-red-100">{error}</div>
+        <div className="px-4 md:px-8 py-3 bg-red-50 text-red-600 text-sm border-b border-red-100 dark:bg-danger/10 dark:text-red-300 dark:border-danger/30">{error}</div>
       )}
 
       {/* Main Content */}

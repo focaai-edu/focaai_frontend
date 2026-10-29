@@ -4,7 +4,7 @@ import { OVER_24H_SECONDS } from '../lib/duration';
 export default function OpenTooLongNotice({ elapsedSeconds }) {
   if (elapsedSeconds <= OVER_24H_SECONDS) return null;
   return (
-    <div role="status" className="flex-shrink-0 px-6 py-2 bg-amber-100 text-amber-900 text-center text-sm font-medium">
+    <div role="status" className="flex-shrink-0 px-6 py-2 bg-amber-100 text-amber-900 dark:bg-warning/15 dark:text-warning text-center text-sm font-medium">
       Aula aberta há mais de 24 horas. Encerre-a se ela já terminou.
     </div>
   );

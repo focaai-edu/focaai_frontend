@@ -8,7 +8,7 @@ vi.mock('../context/AuthContext', () => ({
 }));
 
 vi.mock('../hooks/useTheme', () => ({
-  useTheme: () => ({ theme: 'dark', toggleTheme: vi.fn() }),
+  useTheme: () => ({ theme: 'dark', setTheme: vi.fn() }),
 }));
 
 vi.mock('./ParticleField', () => ({

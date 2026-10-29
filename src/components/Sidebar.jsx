@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../hooks/useTheme';
+import ThemeToggle from './ThemeToggle';
 
 const NAV_ITEMS = {
   teacher: [
@@ -41,7 +41,6 @@ export default function Sidebar({ role = 'student', isOpen = false, onNavigate }
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const items = NAV_ITEMS[role] || NAV_ITEMS.student;
 
   const isActive = (path) => {
@@ -127,21 +126,11 @@ export default function Sidebar({ role = 'student', isOpen = false, onNavigate }
       <div className="p-3 mt-auto">
         <div className="mx-1 mb-2 h-px bg-white/10" />
 
-        {/* Theme toggle */}
-        <button
-          onClick={toggleTheme}
-          aria-label={`Mudar para modo ${theme === 'dark' ? 'claro' : 'escuro'}`}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all cursor-pointer border-none bg-transparent text-white/70 hover:text-white hover:bg-white/10"
-        >
-          <span className="w-5 h-5 flex-shrink-0 flex items-center justify-center text-base">
-            {theme === 'dark' ? '☀️' : '🌙'}
-          </span>
-          <span>{theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}</span>
-        </button>
+        <ThemeToggle />
 
         {/* User + Logout */}
         {user && (
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg mt-0.5 bg-white/10">
+          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg mt-2 bg-white/10">
             <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold bg-white/20 text-white">
               {initials}
             </div>
