@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import api from '../../services/api';
-import socket from '../../services/socket';
+import socket, { connectSocket } from '../../services/socket';
 import StudentGrid from '../../components/StudentGrid';
 import OpenTooLongNotice from '../../components/OpenTooLongNotice';
 import { useElapsed } from '../../hooks/useElapsed';
@@ -56,7 +56,7 @@ export default function TeacherClassLive() {
     // Ao (re)conectar, entra de novo na sala para seguir recebendo transcrição e presença (F08).
     socket.on('connect', join);
     if (socket.connected) join();
-    else socket.connect();
+    else connectSocket();
 
     const setStudentStatus = (studentId, status) =>
       setStudents(prev => prev.map(s => (s.student_id === studentId ? { ...s, status } : s)));

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router';
-import socket from '../../services/socket';
+import socket, { connectSocket } from '../../services/socket';
 import api from '../../services/api';
 import { useLiveClassExitGuard } from '../../hooks/useLiveClassExitGuard';
 import { useAudioChunks } from '../../hooks/useAudioChunks';
@@ -258,7 +258,7 @@ export default function RoomCamera() {
 
   useEffect(() => {
     if (!selectedClassId) return;
-    if (!socket.connected) socket.connect();
+    if (!socket.connected) connectSocket();
     else socket.emit('join_class', { class_id: selectedClassId });
     return () => { socket.emit('leave_class', { class_id: selectedClassId }); };
   }, [selectedClassId]);

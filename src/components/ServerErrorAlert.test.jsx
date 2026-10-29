@@ -3,9 +3,9 @@ import { render, cleanup, screen, act } from '@testing-library/react';
 
 const socket = vi.hoisted(() => ({ current: null }));
 vi.mock('../services/socket', async () => {
-  const { createFakeSocket } = await import('../test/attentionHarness');
+  const { createFakeSocket, fakeSocketModule } = await import('../test/attentionHarness');
   socket.current = createFakeSocket();
-  return { default: socket.current };
+  return fakeSocketModule(socket.current);
 });
 
 import ServerErrorAlert from './ServerErrorAlert';

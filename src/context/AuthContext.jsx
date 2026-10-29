@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api, { onUnauthorized } from '../services/api';
-import socket from '../services/socket';
+import socket, { connectSocket } from '../services/socket';
 import { isLoadFailure } from '../lib/loadError';
 
 const SESSION_ENDED_TEXT = 'Sua sessão terminou. Entre de novo para continuar.';
@@ -40,7 +40,7 @@ export function AuthProvider({ children }) {
       socket.disconnect();
       return undefined;
     }
-    if (!socket.connected) socket.connect();
+    connectSocket();
 
     // O servidor derruba as conexões de um login no logout (backend RN27). Com
     // "io server disconnect" o socket.io não reconecta sozinho: a aba confere a
@@ -59,7 +59,7 @@ export function AuthProvider({ children }) {
       try {
         const res = await api.get('/api/auth/me');
         if (cancelled) return;
-        if (res.data.authenticated && res.data.user?.id === userId) socket.connect();
+        if (res.data.authenticated && res.data.user?.id === userId) connectSocket();
         else { setSessionEnded(true); setUser(null); }
       } catch (err) {
         if (cancelled) return;
