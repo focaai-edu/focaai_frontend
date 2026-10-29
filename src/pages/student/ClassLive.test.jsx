@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, screen } from '@testing-library/react';
+import { render, cleanup, screen, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router';
 import { setupEnvironment, teardownEnvironment, flush, emitted, advance, lastWorker, pose } from '../../test/attentionHarness';
 import api from '../../services/api';
@@ -218,5 +218,38 @@ describe('Aula ao vivo do aluno — transcrição (#4 CA11)', () => {
     expect(screen.getByText('A clorofila absorve luz.')).toBeTruthy();
     expect(screen.getByText(new Date(ts).toLocaleTimeString('pt-BR'))).toBeTruthy();
     expect(screen.queryByText('Outra aula.')).toBeNull();
+  });
+});
+
+describe('Aula ao vivo do aluno — resumo pronto (#5 CA1–CA3)', () => {
+  const TEXT = 'Você perdeu um trecho da aula — o resumo já está disponível na revisão.';
+
+  it('CA1: summary_ready do próprio aluno mostra o aviso por 8 s', async () => {
+    await renderLive();
+    socket.current.trigger('summary_ready', { class_id: 7, student_id: 3, attention_event_id: 41 });
+    const notice = screen.getByText(TEXT);
+    expect(notice.closest('[role="status"]')).toBeTruthy();
+    // Sem animação quando o usuário prefere movimento reduzido.
+    expect(notice.closest('[role="status"]').className).toMatch(/motion-safe:/);
+    act(() => { vi.advanceTimersByTime(7900); });
+    expect(screen.getByText(TEXT)).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(screen.queryByText(TEXT)).toBeNull();
+  });
+
+  it('CA2: summary_ready de outro aluno (ou de outra aula) não mostra nada', async () => {
+    await renderLive();
+    socket.current.trigger('summary_ready', { class_id: 7, student_id: 99, attention_event_id: 41 });
+    socket.current.trigger('summary_ready', { class_id: 8, student_id: 3, attention_event_id: 42 });
+    expect(screen.queryByText(TEXT)).toBeNull();
+  });
+
+  it('CA3: o listener de attention_alert não existe mais', async () => {
+    await renderLive();
+    socket.current.trigger('attention_alert', { status: 'distracted', duration_seconds: 60 });
+    expect(screen.queryByText(/parece que você se distraiu/)).toBeNull();
+    const { readFileSync } = await import('node:fs');
+    const code = readFileSync(`${process.cwd()}/src/pages/student/ClassLive.jsx`, 'utf8');
+    expect(code).not.toMatch(/attention_alert|showDistraction/);
   });
 });

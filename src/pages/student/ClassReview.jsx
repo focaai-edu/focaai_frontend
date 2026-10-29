@@ -5,6 +5,11 @@ import api from '../../services/api';
 import AttentionTimeline from '../../components/AttentionTimeline';
 import TranscriptPanel from '../../components/TranscriptPanel';
 import { useAuth } from '../../context/AuthContext';
+import LoadError from '../../components/LoadError';
+import SummaryText, { summaryPreview } from '../../components/SummaryText';
+import { useSummaryRefresh } from '../../hooks/useSummaryRefresh';
+import { isLoadFailure } from '../../lib/loadError';
+import { formatSeconds } from '../../lib/duration';
 
 export default function StudentClassReview() {
   const { id } = useParams();
@@ -16,29 +21,30 @@ export default function StudentClassReview() {
   const [attentionEvents, setAttentionEvents] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [sidePanel, setSidePanel] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
-  useEffect(() => {
+  // Carga completa; também usada na recarga dos resumos (CA5) e no "Tentar de novo".
+  const load = useCallback(async () => {
     if (!user?.id) return;
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const [classRes, reportRes, eventsRes] = await Promise.all([
-          api.get(`/api/classes/${classId}`),
-          api.get(`/api/classes/${classId}/report/${user.id}`),
-          api.get(`/api/classes/${classId}/attention-events`),
-        ]);
-        if (!cancelled) {
-          setCls(classRes.data.class);
-          setStudentData(reportRes.data.student_data || null);
-          setAttentionEvents(eventsRes.data.events || []);
-        }
-      } catch { /* estado de erro próprio: #5 (CA10) */ }
-      finally { if (!cancelled) setLoading(false); }
+    try {
+      const [classRes, reportRes, eventsRes] = await Promise.all([
+        api.get(`/api/classes/${classId}`),
+        api.get(`/api/classes/${classId}/report/${user.id}`),
+        api.get(`/api/classes/${classId}/attention-events`),
+      ]);
+      setCls(classRes.data.class);
+      setStudentData(reportRes.data.student_data || null);
+      setAttentionEvents(eventsRes.data.events || []);
+      setLoadFailed(false);
+    } catch (err) {
+      // 4xx (não participou) segue no estado vazio; rede/5xx é erro (F33).
+      if (isLoadFailure(err)) setLoadFailed(true);
+    } finally {
+      setLoading(false);
     }
-    load();
-    return () => { cancelled = true; };
   }, [classId, user?.id]);
+
+  useEffect(() => { load(); }, [load]);
 
   // Lista de distrações (com resumo) — alimenta a lista de resumos e o download.
   const events = (studentData?.distraction_events || []).map((evt, i) => ({
@@ -51,16 +57,26 @@ export default function StudentClassReview() {
     summary: evt.summary,
   }));
 
+  // Resumo que ainda pode chegar: recarrega a cada 5 s até 60 s depois do fim (CA4/CA5).
+  const { generating } = useSummaryRefresh({
+    endedAt: cls?.ended_at,
+    missing: events.some((e) => !e.summary),
+    reload: load,
+  });
+  const noSummaryText = generating ? 'Gerando resumo…' : 'Resumo não disponível para este trecho.';
+
   // Timeline REAL: sequência completa de eventos do aluno (atento, distraído,
   // sem câmera...) com os status verdadeiros — não só as distrações. Anexa o
-  // resumo aos segmentos de distração (casando started_at, ambos em ISO) para
-  // que o clique abra o painel lateral.
-  const summaryByStart = {};
-  (studentData?.distraction_events || []).forEach((evt) => {
-    if (evt.started_at) summaryByStart[evt.started_at] = evt;
-  });
+  // resumo aos segmentos de distração para que o clique abra o painel lateral.
+  // Casa pelo `attention_event_id` quando o relatório o traz; senão pelo instante
+  // de início, e não pela string (os endpoints podem formatar o fuso de jeitos
+  // diferentes, "+00:00" × "Z") (#5, F22).
+  const distractions = studentData?.distraction_events || [];
+  const findDistraction = (e) =>
+    distractions.find((d) => d.attention_event_id != null && d.attention_event_id === e.id)
+    ?? distractions.find((d) => d.attention_event_id == null && Date.parse(d.started_at) === Date.parse(e.started_at));
   const timelineEvents = attentionEvents.map((e, i) => {
-    const match = e.status === 'distracted' ? summaryByStart[e.started_at] : null;
+    const match = e.status === 'distracted' ? findDistraction(e) : null;
     return {
       id: e.id ?? i,
       status: e.status,
@@ -76,9 +92,9 @@ export default function StudentClassReview() {
     setSidePanel(event);
   }, []);
 
-  const totalDuration = cls
-    ? Math.round(((cls.ended_at ? new Date(cls.ended_at) - new Date(cls.started_at) : 0) / 1000) / 60)
-    : 45;
+  const totalDuration = cls?.started_at && cls?.ended_at
+    ? Math.round((new Date(cls.ended_at) - new Date(cls.started_at)) / 60000)
+    : 0;
 
   const handleDownload = () => {
     if (!studentData) return;
@@ -90,7 +106,7 @@ export default function StudentClassReview() {
       '',
       '--- Momentos de Desatenção ---',
       ...events.map((e, i) =>
-        `\n[${i + 1}] ${e.started_at ? new Date(e.started_at).toLocaleTimeString('pt-BR') : '?'} → ${e.ended_at ? new Date(e.ended_at).toLocaleTimeString('pt-BR') : '?'}\n${e.summary || 'Sem resumo disponível.'}`
+        `\n[${i + 1}] ${e.started_at ? new Date(e.started_at).toLocaleTimeString('pt-BR') : '?'} → ${e.ended_at ? new Date(e.ended_at).toLocaleTimeString('pt-BR') : '?'}\n${e.summary || noSummaryText}`
       ),
     ];
     const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
@@ -107,6 +123,10 @@ export default function StudentClassReview() {
   }
 
   const cardBase = "rounded-xl bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-[#334155]";
+
+  if (loadFailed) {
+    return <Layout role="student"><LoadError onRetry={() => { setLoading(true); load(); }} /></Layout>;
+  }
 
   return (
     <Layout role="student">
@@ -153,7 +173,8 @@ export default function StudentClassReview() {
             {timelineEvents.length > 0 ? (
               <AttentionTimeline
                 events={timelineEvents}
-                totalDurationMinutes={totalDuration}
+                classStart={cls?.started_at}
+                classEnd={cls?.ended_at}
                 onPeriodClick={handleDistractionClick}
               />
             ) : (
@@ -183,13 +204,13 @@ export default function StudentClassReview() {
                         {evt.ended_at ? new Date(evt.ended_at).toLocaleTimeString('pt-BR') : '?'}
                       </span>
                       <span className="text-xs text-[#4A90D9] font-semibold">
-                        {Math.round(evt.duration_seconds / 60)} min
+                        {formatSeconds(evt.duration_seconds)}
                       </span>
                     </div>
                     {evt.summary ? (
-                      <p className="text-sm text-gray-700 dark:text-[#CBD5E1] m-0 line-clamp-2">{evt.summary}</p>
+                      <p className="text-sm text-gray-700 dark:text-[#CBD5E1] m-0 line-clamp-2">{summaryPreview(evt.summary)}</p>
                     ) : (
-                      <p className="text-sm text-gray-400 dark:text-[#475569] m-0 italic">Sem resumo disponível.</p>
+                      <p className="text-sm text-gray-400 dark:text-[#475569] m-0 italic">{noSummaryText}</p>
                     )}
                   </div>
                 ))}
@@ -215,7 +236,7 @@ export default function StudentClassReview() {
       {sidePanel && (
         <>
           <div className="fixed inset-0 bg-black/30 z-[999]" onClick={() => setSidePanel(null)} />
-          <div className="fixed top-0 right-0 w-[400px] h-full bg-white dark:bg-[#1E293B] border-l border-gray-200 dark:border-[#334155] shadow-[-4px_0_20px_rgba(0,0,0,0.2)] z-[1000] flex flex-col">
+          <div role="dialog" aria-modal="true" aria-label="Resumo do trecho perdido" className="fixed top-0 right-0 w-[400px] h-full bg-white dark:bg-[#1E293B] border-l border-gray-200 dark:border-[#334155] shadow-[-4px_0_20px_rgba(0,0,0,0.2)] z-[1000] flex flex-col">
             <div className="p-4 border-b border-gray-200 dark:border-[#334155] flex justify-between items-center">
               <h3 className="text-base font-semibold m-0 text-gray-900 dark:text-[#F1F5F9]">
                 {sidePanel.started_at ? new Date(sidePanel.started_at).toLocaleTimeString('pt-BR') : ''}
@@ -231,11 +252,9 @@ export default function StudentClassReview() {
             </div>
             <div className="flex-1 overflow-y-auto p-4">
               {sidePanel.summary ? (
-                <p className="text-sm leading-relaxed whitespace-pre-wrap text-gray-900 dark:text-[#F1F5F9]">{sidePanel.summary}</p>
+                <SummaryText text={sidePanel.summary} className="text-sm leading-relaxed text-gray-900 dark:text-[#F1F5F9]" />
               ) : (
-                <p className="text-sm text-gray-400 dark:text-[#475569] italic">
-                  Não há conteúdo registrado para esse período.
-                </p>
+                <p className="text-sm text-gray-400 dark:text-[#475569] italic">{noSummaryText}</p>
               )}
               <p className="text-xs text-gray-500 dark:text-[#64748B] mt-2 italic">Este conteúdo foi gerado por IA.</p>
               <button

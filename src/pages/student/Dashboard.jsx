@@ -2,6 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import Layout from '../../components/Layout';
 import api from '../../services/api';
+import LoadError from '../../components/LoadError';
+import { isLoadFailure } from '../../lib/loadError';
+
+// Uma aula que começa aparece sem recarregar a página (#5, F34).
+const REFRESH_MS = 15000;
 
 export default function StudentDashboard() {
   const navigate = useNavigate();
@@ -9,6 +14,8 @@ export default function StudentDashboard() {
   const [scheduledClasses, setScheduledClasses] = useState([]);
   const [endedClasses, setEndedClasses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -20,16 +27,34 @@ export default function StudentDashboard() {
       setLiveClasses(liveRes.data.classes);
       setScheduledClasses(scheduledRes.data.classes);
       setEndedClasses(endedRes.data.classes);
-    } catch { /* estado de erro próprio: #5 (CA10) */ } finally { setLoading(false); }
+      setLoaded(true);
+      setLoadFailed(false);
+    } catch (err) {
+      // Sem resposta ou 5xx: erro visível. Se uma carga anterior deu certo, a
+      // lista na tela continua e a próxima recarga tenta de novo (ver `loaded`).
+      if (isLoadFailure(err)) setLoadFailed(true);
+    } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchClasses(); }, [fetchClasses]);
+  useEffect(() => {
+    fetchClasses();
+    const timer = setInterval(fetchClasses, REFRESH_MS);
+    window.addEventListener('focus', fetchClasses);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', fetchClasses);
+    };
+  }, [fetchClasses]);
 
   if (loading) {
     return <Layout role="student"><p className="text-gray-500 dark:text-[#64748B]">Carregando...</p></Layout>;
   }
 
   const cardBase = "bg-white dark:bg-[#1E293B] rounded-xl border border-gray-200 dark:border-[#334155]";
+
+  if (loadFailed && !loaded) {
+    return <Layout role="student"><LoadError onRetry={() => { setLoading(true); fetchClasses(); }} /></Layout>;
+  }
 
   return (
     <Layout role="student">

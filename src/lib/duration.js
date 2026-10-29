@@ -12,3 +12,13 @@ export function formatDuration(totalSeconds) {
   if (h === 0) return `${m} min`;
   return `${h} h ${String(m).padStart(2, '0')} min`;
 }
+
+// Duração curta (uma distração): "20 s", "1 min 35 s", "10 min", "1 h 02 min" (#5, F29).
+export function formatSeconds(totalSeconds) {
+  const secs = Number.isFinite(totalSeconds) ? Math.max(0, Math.round(totalSeconds)) : 0;
+  if (secs < 60) return `${secs} s`;
+  if (secs >= 3600) return formatDuration(secs);
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return s ? `${m} min ${s} s` : `${m} min`;
+}

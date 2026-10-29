@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatDuration, OVER_24H_SECONDS } from './duration';
+import { formatDuration, formatSeconds, OVER_24H_SECONDS } from './duration';
 
 describe('formatDuration (#9 CA8/CA14)', () => {
   it.each([
@@ -24,5 +24,25 @@ describe('formatDuration (#9 CA8/CA14)', () => {
 
   it('o limite do aviso de aula aberta é 24 h', () => {
     expect(OVER_24H_SECONDS).toBe(24 * 3600);
+  });
+});
+
+describe('formatSeconds — duração de uma distração (#5 CA8, F29)', () => {
+  it.each([
+    [0, '0 s'],
+    [20, '20 s'],
+    [20.6, '21 s'],
+    [59, '59 s'],
+    [60, '1 min'],
+    [95, '1 min 35 s'],
+    [600, '10 min'],
+    [3725, '1 h 02 min'],
+  ])('%s s → "%s"', (secs, text) => {
+    expect(formatSeconds(secs)).toBe(text);
+  });
+
+  it('valor inválido vira "0 s"', () => {
+    expect(formatSeconds(undefined)).toBe('0 s');
+    expect(formatSeconds(-3)).toBe('0 s');
   });
 });

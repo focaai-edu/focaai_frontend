@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
+import LoadError from './LoadError';
+import { isLoadFailure } from '../lib/loadError';
 
 /**
  * Painel colapsável com a transcrição completa de uma aula encerrada.
@@ -16,26 +18,26 @@ export default function TranscriptPanel({ classId, defaultOpen = false }) {
   const [blocks, setBlocks] = useState(null); // null = carregando, [] = vazio
   const [open, setOpen] = useState(defaultOpen);
   const [denied, setDenied] = useState(false);
+  const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const res = await api.get(`/api/classes/${classId}/transcriptions`);
-        if (!cancelled) setBlocks(res.data.transcriptions || []);
-      } catch (err) {
-        if (!cancelled) {
-          if (err.response?.status === 403) setDenied(true);
-          setBlocks([]);
-        }
-      }
+  const load = useCallback(async () => {
+    setFailed(false);
+    try {
+      const res = await api.get(`/api/classes/${classId}/transcriptions`);
+      setBlocks(res.data.transcriptions || []);
+    } catch (err) {
+      if (err.response?.status === 403) setDenied(true);
+      // Rede ou 5xx: erro visível em vez de sumir sem aviso (#5, F33).
+      else if (isLoadFailure(err)) setFailed(true);
+      setBlocks([]);
     }
-    load();
-    return () => { cancelled = true; };
   }, [classId]);
+
+  useEffect(() => { load(); }, [load]);
 
   // Sem permissão ou sem nenhum bloco: não renderiza nada.
   if (denied) return null;
+  if (failed) return <LoadError onRetry={() => { setBlocks(null); load(); }} className="mb-8" />;
   if (blocks !== null && blocks.length === 0) return null;
 
   const fmt = (iso) => {
