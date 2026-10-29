@@ -53,6 +53,8 @@ describe('/room — 1 frame por segundo, um por vez (#51)', () => {
   it('CA1: com resposta rápida, envia na abertura e depois a cada 1000 ms', async () => {
     await openRoom();
     expect(frames()).toBe(1);
+    // #56 CA3: o frame continua JPEG 0,75
+    expect(HTMLCanvasElement.prototype.toDataURL).toHaveBeenCalledWith('image/jpeg', 0.75);
     for (let i = 2; i <= 4; i++) {
       answer();
       tick(999);

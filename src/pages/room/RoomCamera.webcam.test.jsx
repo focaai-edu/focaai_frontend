@@ -114,4 +114,17 @@ describe('/room — erro da webcam e nova tentativa (#47)', () => {
     expect(abrir().disabled).toBe(false);
     expect(videoEl().srcObject).toBeTruthy();
   });
+
+  it('#56 CA1/CA2: pede 1280x720 como ideal (nunca exact/min), também no "Tentar de novo"', async () => {
+    video = [mediaError('NotReadableError')];
+    await renderRoom();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' })); });
+    await flush();
+    const asked = env.getUserMedia.mock.calls.map(([c]) => c).filter((c) => c.video);
+    expect(asked).toHaveLength(2);
+    for (const c of asked) {
+      expect(c).toEqual({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } });
+      expect(JSON.stringify(c)).not.toMatch(/exact|min/);
+    }
+  });
 });

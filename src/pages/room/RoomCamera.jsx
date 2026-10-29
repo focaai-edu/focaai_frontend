@@ -291,7 +291,9 @@ export default function RoomCamera() {
     setWebcamError('');
     // Uma stream que chega depois da troca de aula/câmera não pode ficar presa à webcam (#47).
     let cancelled = false;
-    navigator.mediaDevices.getUserMedia({ video: true })
+    // 1280x720 como ideal: rostos distantes ficam pequenos demais em 640x480 para o YuNet.
+    // Sem exact/min, a webcam fraca abre na maior resolução que tiver (#56).
+    navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } })
       .then(stream => {
         if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
         webcamStreamRef.current = stream;
