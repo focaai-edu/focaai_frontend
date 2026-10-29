@@ -33,6 +33,7 @@ export function useAttention(classId, studentId, monitoringMode = 'full_attentio
   params.current = { classId, studentId, monitoringMode, source };
 
   const currentStatus = useRef(null);     // status confirmado (exibido + persistido)
+  const confirmedPose = useRef(null);     // ângulos/EAR do frame que confirmou o status
   const candidate = useRef(null);         // status pendente de confirmação
   const candidateSince = useRef(0);       // quando o candidato apareceu
   const noFaceSince = useRef(null);       // início da ausência de rosto atual (null = há rosto)
@@ -55,9 +56,17 @@ export function useAttention(classId, studentId, monitoringMode = 'full_attentio
   const confirm = useCallback((newStatus, pose) => {
     if (newStatus === currentStatus.current) return;
     currentStatus.current = newStatus;
+    confirmedPose.current = pose;
     candidate.current = newStatus;
     setStatus(newStatus);
     emitUpdate(newStatus, pose);
+  }, [emitUpdate]);
+
+  // Reanuncia o status confirmado (sem mudança), para o backend abrir o evento
+  // com o modo novo ou depois de uma reconexão. Nada sai em `break` (RF09, #3).
+  const reannounce = useCallback(() => {
+    if (currentStatus.current === null || params.current.monitoringMode === 'break') return;
+    emitUpdate(currentStatus.current, confirmedPose.current);
   }, [emitUpdate]);
 
   // Confirma um status (com estabilização) e emite na troca.
@@ -115,6 +124,24 @@ export function useAttention(classId, studentId, monitoringMode = 'full_attentio
     if (params.current.monitoringMode === 'break') return;
     confirm('no_camera', null);
   }, [confirm]);
+
+  // Troca de modo: reemite o status atual com o modo novo (RF09). Sair de `break`
+  // é uma troca como outra qualquer, então o status congelado sai uma vez.
+  const previousMode = useRef(monitoringMode);
+  useEffect(() => {
+    if (previousMode.current === monitoringMode) return;
+    previousMode.current = monitoringMode;
+    reannounce();
+  }, [monitoringMode, reannounce]);
+
+  // Reconexão: reemite o status atual depois do `join_class` da tela (RF10).
+  // Os listeners de `connect` rodam em sequência; a microtask garante que o
+  // join_class da página, registrado depois deste, saia antes do status.
+  useEffect(() => {
+    const onConnect = () => queueMicrotask(reannounce);
+    socket.on('connect', onConnect);
+    return () => socket.off('connect', onConnect);
+  }, [reannounce]);
 
   // Aba oculta: o navegador para de entregar frames, então o status congelaria.
   // Depois de HIDDEN_MS oculta, o aluno conta como `distracted` (#8, F02).

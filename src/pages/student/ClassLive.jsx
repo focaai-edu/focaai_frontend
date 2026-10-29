@@ -44,8 +44,25 @@ export default function StudentClassLive() {
   }, [classId, navigate]);
 
   useEffect(() => {
-    if (!socket.connected) socket.connect();
-    socket.emit('join_class', { class_id: classId });
+    const join = () => socket.emit('join_class', { class_id: classId });
+    // O `class_ended` pode ter se perdido durante a queda: confere a aula e, se
+    // ela não está mais ao vivo, vai para a revisão (desmontar para câmera e detector) (F07).
+    const checkStillLive = async () => {
+      try {
+        const res = await api.get(`/api/classes/${classId}`);
+        if (res.data.class.status !== 'live') navigate(`/student/classes/${classId}/review`);
+      } catch { /* sem resposta: continua na tela e tenta de novo na próxima reconexão */ }
+    };
+    // Ao (re)conectar, entra de novo na sala (RF10); o status é reemitido pelo useAttention.
+    const onConnect = () => {
+      join();
+      checkStillLive();
+    };
+    socket.on('connect', onConnect);
+    // `error` ao reentrar (ex.: "Aula nao esta ao vivo"): mesma consulta (F07).
+    socket.on('error', checkStillLive);
+    if (socket.connected) join();
+    else socket.connect();
 
     socket.on('class_state', (data) => {
       setCls(prev => prev || data.class);
@@ -70,6 +87,8 @@ export default function StudentClassLive() {
       socket.off('class_state'); socket.off('monitoring_mode_changed');
       socket.off('class_ended'); socket.off('attention_alert');
       socket.off('new_transcription');
+      socket.off('connect', onConnect);
+      socket.off('error', checkStillLive);
     };
   }, [classId, navigate]);
 

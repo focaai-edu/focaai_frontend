@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import ServerErrorAlert from './components/ServerErrorAlert';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import NotFound from './pages/NotFound';
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/room-test" element={<RoomCameraTest />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
+      <ServerErrorAlert />
     </AuthProvider>
   );
 }

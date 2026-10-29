@@ -61,6 +61,8 @@ export function setupEnvironment() {
   Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia }, configurable: true });
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+  // jsdom não implementa rolagem; as listas de transcrição chamam scrollIntoView.
+  if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
   setVisibility('visible');
   return { stream, getUserMedia };
 }
