@@ -18,6 +18,19 @@ const MODE_PT = {
 // Cor de atenção por faixa de % (verde / âmbar / vermelho).
 const attColor = (pct) => (pct >= 70 ? '#22C55E' : pct >= 40 ? '#F59E0B' : '#EF4444');
 
+// Configuração do gráfico de atenção ao longo da aula (#14 / V19)
+export const ATTENTION_CHART_CONFIG = {
+  margin: { top: 5, right: 8, left: 0, bottom: 0 },
+  xAxis: {
+    tickFormatter: (m) => `${m}m`,
+  },
+  yAxis: {
+    domain: [0, 100],
+    ticks: [0, 25, 50, 75, 100],
+    tickFormatter: (v) => `${v}%`,
+  },
+};
+
 function ChartTooltip({ active, payload, label, suffix }) {
   if (!active || !payload?.length) return null;
   return (
@@ -132,7 +145,7 @@ export default function TeacherClassReport() {
             <h2 className="text-base font-semibold mb-1 text-gray-900 dark:text-[#F1F5F9]">Atenção da turma ao longo da aula</h2>
             <p className="text-xs text-gray-500 dark:text-[#64748B] mb-4 m-0">% de alunos atentos a cada minuto</p>
             <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={timeline} margin={{ top: 5, right: 8, left: -16, bottom: 0 }}>
+              <AreaChart data={timeline} margin={ATTENTION_CHART_CONFIG.margin}>
                 <defs>
                   <linearGradient id="attGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#4A90D9" stopOpacity={0.5} />
@@ -141,12 +154,14 @@ export default function TeacherClassReport() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" strokeOpacity={0.4} vertical={false} />
                 <XAxis
-                  dataKey="minute" tickFormatter={(m) => `${m}m`}
+                  dataKey="minute" tickFormatter={ATTENTION_CHART_CONFIG.xAxis.tickFormatter}
                   stroke="#64748B" fontSize={11} tickLine={false} axisLine={false}
                   interval="preserveStartEnd"
                 />
                 <YAxis
-                  domain={[0, 100]} tickFormatter={(v) => `${v}%`}
+                  domain={ATTENTION_CHART_CONFIG.yAxis.domain}
+                  ticks={ATTENTION_CHART_CONFIG.yAxis.ticks}
+                  tickFormatter={ATTENTION_CHART_CONFIG.yAxis.tickFormatter}
                   stroke="#64748B" fontSize={11} tickLine={false} axisLine={false} width={42}
                 />
                 <Tooltip content={<ChartTooltip suffix="min" />} />
