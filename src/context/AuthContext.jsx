@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import api from '../services/api';
+import api, { onUnauthorized } from '../services/api';
 import socket from '../services/socket';
 import { isLoadFailure } from '../lib/loadError';
 
@@ -84,6 +84,17 @@ export function AuthProvider({ children }) {
       socket.off('disconnect', onDisconnect);
       socket.disconnect();
     };
+  }, [userId]);
+
+  // 401 em qualquer chamada autenticada: mesma saída da sessão encerrada em
+  // outra aba (#32). Sem usuário, o socket cai e a rota protegida leva ao /login (#45).
+  useEffect(() => {
+    if (userId === null) return undefined;
+    return onUnauthorized(() => {
+      socket.disconnect();
+      setSessionEnded(true);
+      setUser(null);
+    });
   }, [userId]);
 
   const login = useCallback(async (email, password) => {

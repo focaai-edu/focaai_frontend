@@ -10,7 +10,7 @@ vi.mock('../services/socket', async () => {
   socket.current = createFakeSocket();
   return { default: socket.current };
 });
-vi.mock('../services/api', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('../services/api', () => ({ default: { get: vi.fn(), post: vi.fn() }, onUnauthorized: () => () => {} }));
 
 import api from '../services/api';
 import '../services/socket';
