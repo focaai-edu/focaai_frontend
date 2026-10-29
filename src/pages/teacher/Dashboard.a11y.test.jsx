@@ -64,3 +64,16 @@ describe('Dashboard do professor — acessibilidade (#16)', () => {
     expect(document.activeElement).toBe(pencil);
   });
 });
+
+describe('Abas com contador (#19 CA2/CA6, V13)', () => {
+  it('o nome acessível separa o rótulo do número; o badge visual fica fora da leitura', async () => {
+    await renderDashboard();
+    const tab = screen.getByRole('button', { name: 'Agendadas, 1 aula' });
+    expect(tab.querySelector('[aria-hidden="true"]').textContent).toBe('1');
+    // Nenhum botão com texto e número colados.
+    for (const b of screen.getAllByRole('button')) {
+      const name = b.getAttribute('aria-label') || b.textContent;
+      expect(name).not.toMatch(/[A-Za-zÀ-ú]\d/);
+    }
+  });
+});

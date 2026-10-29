@@ -111,6 +111,8 @@ O relatório do professor segue a mesma regra de duração, prévia e recarga do
 
 **RF29 — Excluir aula.** No painel do professor, aulas agendadas e encerradas têm a lixeira "Excluir aula <título>" (aulas ao vivo não: o backend recusa, RN04). Ela abre o `Dialog` (RF28) com "Cancelar" e "Excluir aula" (token `danger`). Para encerrada: `Tem certeza que deseja excluir a aula "<título>"? A transcrição, os eventos de atenção e os resumos dessa aula serão removidos permanentemente. Esta ação não pode ser desfeita.`; para agendada, sem a frase do meio. Confirmar envia `DELETE /api/classes/:id` (sessão do professor) e mostra "Excluindo…" até a resposta. Sucesso: o card sai da lista sem recarregar, o contador da aba diminui e aparece "Aula excluída com sucesso." (`role="status"`). Erro: o card fica, o diálogo fecha e aparece "Não foi possível excluir a aula. Tente novamente." (`role="alert"`). Cancelar ou Escape não enviam nada (#20).
 
+**RF30 — Textos e números em pt-BR.** Mensagens com acentuação correta (ex.: login com credencial errada, HTTP 401: "E-mail ou senha inválidos.", texto fixo do frontend). Números decimais e percentuais usam `src/lib/numberFormat.js` (`Intl.NumberFormat('pt-BR')`, até uma casa): "93,3%", "20,5m", "1.234,5" — no relatório do professor (média, percentuais, minutos, rótulos e tooltip do gráfico) e na revisão do aluno (cards e download). Abas com contador expõem o nome "Agendadas, 1 aula" ao leitor de tela, com o número visual `aria-hidden`. Rótulos de modo e status vêm de `src/lib/labels.js` (RF03) (#19).
+
 **RF17 — Datas.** As datas vêm da API em UTC com `Z` (RN24) e são exibidas no horário local do navegador, em `pt-BR`.
 
 ### 2.5 Processamento
@@ -152,6 +154,7 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 | RF27 | ✅ | — | — |
 | RF28 | ✅ | — | — |
 | RF29 | ✅ | — | — |
+| RF30 | ✅ | — | — |
 
 Cobertura por testes:
 - Camada 1, unidade (#2, #8), em `src/lib/attentionAlgo.test.js`: RF01 (identidade e rotações conhecidas, que fixam o sinal), RF02 (EAR, landmark ausente, largura zero), RF03 e RF04 (por modo), além da paridade entre o worker e `attentionAlgo.js`.
@@ -162,6 +165,7 @@ Cobertura por testes:
 - RF28 (#16): `components/Dialog.test.jsx` e, por papel e teclado (user-event), `pages/teacher/Dashboard.a11y.test.jsx`, `pages/student/ClassReview.a11y.test.jsx` e `pages/room/RoomCamera.a11y.test.jsx`.
 - Limpeza (#35): `tests/cleanup.test.js` (arquivos e dependências mortas, rótulos numa fonte só, worker sem limiares e lintado) e `hooks/useLatestRequest.test.js` (resposta antiga não sobrescreve a nova em `/room-test`).
 - RF29 (#20): `pages/teacher/Dashboard.delete.test.jsx`.
+- RF30 (#19): `lib/numberFormat.test.js`, `tests/ptbr-text.test.js`, `pages/Login.ptbr.test.jsx` e os blocos pt-BR de `ClassReport.summaries.test.jsx`, `ClassReview.test.jsx` e `Dashboard.a11y.test.jsx`.
 - Relatório do professor (#14, em `src/pages/teacher/ClassReport.test.jsx`): calibração do gráfico de atenção da turma (`AreaChart`) com domínio fixo `[0, 100]`, marcações `[0, 25, 50, 75, 100]`, formatação percentual sem repetição e margem esquerda `>= 0` prevenindo corte dos dígitos.
 - Layout responsivo (#12, em `src/components/Layout.test.jsx`): colapso da sidebar no mobile (< 768px) como gaveta com backdrop, botão de menu com `aria-expanded`, fechamento por clique externo, tecla Escape e navegação por link, com margem responsiva (`ml-0 md:ml-[240px]`) e eliminação de transbordamento horizontal.
 - Telas de aula ao vivo no mobile (#13, em `src/pages/ClassLiveResponsive.test.jsx`): layout empilhado (`flex-col md:flex-row`) no aluno com câmera e monitor em largura total sem esmagamento e transcrição empilhada abaixo (`w-full md:w-[300px]`); no professor, seletor de modos sem truncamento (`overflow-x-auto flex-nowrap`) e empilhamento da grade de alunos e transcrição eliminando divisão de 170px.

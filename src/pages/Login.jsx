@@ -134,7 +134,9 @@ export default function Login() {
     try {
       await login(email, password);
     } catch (err) {
-      setError(err.response?.data?.error || 'Erro ao fazer login. Tente novamente.');
+      // Credencial errada tem texto fixo em pt-BR, sem depender da grafia do servidor (#19, V12).
+      if (err.response?.status === 401) setError('E-mail ou senha inválidos.');
+      else setError(err.response?.data?.error || 'Erro ao fazer login. Tente novamente.');
     } finally {
       setSubmitting(false);
     }

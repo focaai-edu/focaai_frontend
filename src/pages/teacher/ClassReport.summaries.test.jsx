@@ -104,3 +104,20 @@ describe('Relatório do professor — distrações e resumos (#5)', () => {
     expect(screen.getByText(/A aula precisa ser encerrada primeiro/)).toBeTruthy();
   });
 });
+
+describe('Relatório do professor — números pt-BR (#19 CA3)', () => {
+  it('média, percentual do aluno e minutos com vírgula decimal', async () => {
+    const r = report([]);
+    r.overview.average_attention_percentage = 84.4;
+    r.duration_minutes = 30.5;
+    Object.assign(r.students[0], { attention_percentage: 57.9, time_attentive_minutes: 20.5, total_time_in_class_minutes: 28.3 });
+    api.get.mockResolvedValue({ data: r });
+    await renderReport();
+    expect(screen.getAllByText('84,4%').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('57,9%').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/\b84\.4%|\b57\.9%/)).toBeNull();
+    expect(screen.getByText('28,3m total')).toBeTruthy();
+    expandAna();
+    expect(screen.getByText('20,5m')).toBeTruthy();
+  });
+});

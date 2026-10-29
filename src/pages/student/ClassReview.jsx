@@ -11,6 +11,7 @@ import SummaryText, { summaryPreview } from '../../components/SummaryText';
 import { useSummaryRefresh } from '../../hooks/useSummaryRefresh';
 import { isLoadFailure } from '../../lib/loadError';
 import { formatSeconds } from '../../lib/duration';
+import { formatNumber, formatPercent } from '../../lib/numberFormat';
 
 export default function StudentClassReview() {
   const { id } = useParams();
@@ -101,9 +102,9 @@ export default function StudentClassReview() {
     if (!studentData) return;
     const lines = [
       `Resumo da Aula: ${cls?.title || classId}`,
-      `Atenção: ${studentData.attention_percentage}%`,
-      `Tempo atento: ${studentData.time_attentive_minutes} min`,
-      `Tempo desatento: ${studentData.time_distracted_minutes} min`,
+      `Atenção: ${formatPercent(studentData.attention_percentage)}`,
+      `Tempo atento: ${formatNumber(studentData.time_attentive_minutes)} min`,
+      `Tempo desatento: ${formatNumber(studentData.time_distracted_minutes)} min`,
       '',
       '--- Momentos de Desatenção ---',
       ...events.map((e, i) =>
@@ -147,22 +148,22 @@ export default function StudentClassReview() {
           {/* Stats */}
           <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-4 mb-8">
             <div className={`p-5 ${cardBase} text-center`}>
-              <p className="text-2xl font-bold m-0 text-green-500">{studentData.time_attentive_minutes}m</p>
+              <p className="text-2xl font-bold m-0 text-green-500">{formatNumber(studentData.time_attentive_minutes)}m</p>
               <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Tempo atento</p>
             </div>
             <div className={`p-5 ${cardBase} text-center`}>
-              <p className="text-2xl font-bold m-0 text-[#4A90D9]">{studentData.time_distracted_minutes}m</p>
+              <p className="text-2xl font-bold m-0 text-[#4A90D9]">{formatNumber(studentData.time_distracted_minutes)}m</p>
               <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Tempo desatento</p>
             </div>
             <div className={`p-5 ${cardBase} text-center`}>
               <p className={`text-2xl font-bold m-0 ${studentData.attention_percentage >= 70 ? 'text-green-500' : studentData.attention_percentage >= 40 ? 'text-amber-500' : 'text-red-500'}`}>
-                {studentData.attention_percentage}%
+                {formatPercent(studentData.attention_percentage)}
               </p>
               <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Atenção</p>
             </div>
             {studentData.time_no_camera_minutes > 0 && (
               <div className={`p-5 ${cardBase} text-center`}>
-                <p className="text-2xl font-bold m-0 text-amber-500">{studentData.time_no_camera_minutes}m</p>
+                <p className="text-2xl font-bold m-0 text-amber-500">{formatNumber(studentData.time_no_camera_minutes)}m</p>
                 <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Sem câmera</p>
               </div>
             )}

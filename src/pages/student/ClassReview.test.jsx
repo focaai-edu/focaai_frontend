@@ -167,3 +167,13 @@ describe('Revisão da aula (#5)', () => {
     expect(screen.queryByText('Não foi possível carregar.')).toBeNull();
   });
 });
+
+describe('Revisão — números pt-BR (#19 CA3)', () => {
+  it('percentual e minutos com vírgula decimal', async () => {
+    respond({ report: { ...studentData([]), attention_percentage: 93.3, time_attentive_minutes: 20.5, time_distracted_minutes: 1.5 } });
+    await renderReview();
+    expect(screen.getByText('93,3%')).toBeTruthy();
+    expect(screen.getByText('20,5m')).toBeTruthy();
+    expect(screen.getByText('1,5m')).toBeTruthy();
+  });
+});

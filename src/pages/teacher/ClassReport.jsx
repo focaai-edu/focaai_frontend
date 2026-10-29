@@ -8,6 +8,7 @@ import Layout from '../../components/Layout';
 import TranscriptPanel from '../../components/TranscriptPanel';
 import api from '../../services/api';
 import { MODE_LABELS } from '../../lib/labels';
+import { formatNumber, formatPercent } from '../../lib/numberFormat';
 import LoadError from '../../components/LoadError';
 import { summaryPreview } from '../../components/SummaryText';
 import { useSummaryRefresh } from '../../hooks/useSummaryRefresh';
@@ -35,7 +36,7 @@ function ChartTooltip({ active, payload, label, suffix }) {
   return (
     <div className="rounded-lg bg-[#0F172A] border border-[#334155] px-3 py-2 text-xs text-[#F1F5F9] shadow-lg">
       <p className="m-0 font-semibold">{label}{suffix}</p>
-      <p className="m-0 text-[#7DB8F0]">{payload[0].value}% de atenção</p>
+      <p className="m-0 text-[#7DB8F0]">{formatPercent(payload[0].value)} de atenção</p>
     </div>
   );
 }
@@ -115,19 +116,19 @@ export default function TeacherClassReport() {
     <Layout role="teacher">
       <div className="mb-6">
         <h1 className="text-2xl font-bold m-0 mb-1 text-gray-900 dark:text-[#F1F5F9]">{title || 'Relatório da Aula'}</h1>
-        <p className="text-sm text-gray-500 dark:text-[#64748B] m-0">Duração: {duration_minutes} minutos</p>
+        <p className="text-sm text-gray-500 dark:text-[#64748B] m-0">Duração: {formatNumber(duration_minutes)} minutos</p>
       </div>
 
       {/* Overview Cards — métricas de atenção/valor (sem censo de alunos, LGPD) */}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4 mb-4">
         <div className={`p-5 ${cardBase} text-center`}>
           <p className={`text-3xl font-bold m-0 ${overview.average_attention_percentage >= 70 ? 'text-green-500' : overview.average_attention_percentage >= 40 ? 'text-amber-500' : 'text-red-500'}`}>
-            {overview.average_attention_percentage}%
+            {formatPercent(overview.average_attention_percentage)}
           </p>
           <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Atenção média</p>
         </div>
         <div className={`p-5 ${cardBase} text-center`}>
-          <p className="text-3xl font-bold m-0 text-[#1B4F81] dark:text-[#7DB8F0]">{duration_minutes}<span className="text-base font-semibold"> min</span></p>
+          <p className="text-3xl font-bold m-0 text-[#1B4F81] dark:text-[#7DB8F0]">{formatNumber(duration_minutes)}<span className="text-base font-semibold"> min</span></p>
           <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Duração da aula</p>
         </div>
         <div className={`p-5 ${cardBase} text-center`}>
@@ -207,7 +208,7 @@ export default function TeacherClassReport() {
                   stroke="#64748B" fontSize={12} tickLine={false} axisLine={false}
                 />
                 <Tooltip content={<ChartTooltip suffix="" />} cursor={{ fill: '#33415533' }} />
-                <Bar dataKey="pct" radius={[0, 4, 4, 0]} label={{ position: 'right', fill: '#94A3B8', fontSize: 11, formatter: (v) => `${v}%` }}>
+                <Bar dataKey="pct" radius={[0, 4, 4, 0]} label={{ position: 'right', fill: '#94A3B8', fontSize: 11, formatter: (v) => formatPercent(v) }}>
                   {ranking.map((r, i) => <Cell key={i} fill={attColor(r.pct)} />)}
                 </Bar>
               </BarChart>
@@ -288,18 +289,18 @@ export default function TeacherClassReport() {
                   </div>
                   <div className="text-right flex-shrink-0 min-w-[100px]">
                     <p className={`text-lg font-bold m-0 ${student.attention_percentage >= 70 ? 'text-green-500' : student.attention_percentage >= 40 ? 'text-amber-500' : 'text-red-500'}`}>
-                      {student.attention_percentage}%
+                      {formatPercent(student.attention_percentage)}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-[#64748B] m-0">{student.total_time_in_class_minutes}m total</p>
+                    <p className="text-xs text-gray-500 dark:text-[#64748B] m-0">{formatNumber(student.total_time_in_class_minutes)}m total</p>
                   </div>
                 </div>
 
                 {expandedStudent === idx && (
                   <div className="p-5 bg-[#F1F5F9] dark:bg-[#0F172A] border-t border-gray-200 dark:border-[#334155]">
                     <div className="grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] gap-3 mb-4">
-                      <div><p className="text-xs text-gray-500 dark:text-[#64748B] m-0 mb-0.5">Atento</p><p className="text-base font-semibold text-green-500 m-0">{student.time_attentive_minutes}m</p></div>
-                      <div><p className="text-xs text-gray-500 dark:text-[#64748B] m-0 mb-0.5">Desatento</p><p className="text-base font-semibold text-[#4A90D9] m-0">{student.time_distracted_minutes}m</p></div>
-                      <div><p className="text-xs text-gray-500 dark:text-[#64748B] m-0 mb-0.5">Sem câmera</p><p className="text-base font-semibold text-amber-500 m-0">{student.time_no_camera_minutes}m</p></div>
+                      <div><p className="text-xs text-gray-500 dark:text-[#64748B] m-0 mb-0.5">Atento</p><p className="text-base font-semibold text-green-500 m-0">{formatNumber(student.time_attentive_minutes)}m</p></div>
+                      <div><p className="text-xs text-gray-500 dark:text-[#64748B] m-0 mb-0.5">Desatento</p><p className="text-base font-semibold text-[#4A90D9] m-0">{formatNumber(student.time_distracted_minutes)}m</p></div>
+                      <div><p className="text-xs text-gray-500 dark:text-[#64748B] m-0 mb-0.5">Sem câmera</p><p className="text-base font-semibold text-amber-500 m-0">{formatNumber(student.time_no_camera_minutes)}m</p></div>
                       <div><p className="text-xs text-gray-500 dark:text-[#64748B] m-0 mb-0.5">Saiu/voltou</p><p className="text-base font-semibold text-gray-900 dark:text-[#F1F5F9] m-0">{student.times_left_and_returned}x</p></div>
                     </div>
                     {student.distraction_events?.length > 0 && (
