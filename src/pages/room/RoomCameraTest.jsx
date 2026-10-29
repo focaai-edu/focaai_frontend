@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { MODE_THRESHOLDS, MODE_LABELS, pctColor } from '../../lib/attentionAlgo';
 import api from '../../services/api';
 import { useLatestRequest } from '../../hooks/useLatestRequest';
+import { STATUS_COLORS, THEME_COLORS } from '../../lib/colors';
 
 // ── Parameter definitions ─────────────────────────────────────────────────────
 
@@ -139,7 +140,7 @@ export default function RoomCameraTest() {
     const fontPx = Math.max(13, Math.round(H / 40));
     faceList.forEach((f, i) => {
       const { bbox, status } = f;
-      const color = status === 'distracted' ? '#F59E0B' : '#22C55E';
+      const color = status === 'distracted' ? STATUS_COLORS.distracted : STATUS_COLORS.attentive;
       const { x: px, y: py, w: pw, h: ph } = bbox;
       ctx.save();
       ctx.shadowColor = color; ctx.shadowBlur = 12;
@@ -152,7 +153,7 @@ export default function RoomCameraTest() {
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = color;
       ctx.fillRect(px, py - fontPx - 4, tw + 8, fontPx + 4);
-      ctx.fillStyle = '#0F172A';
+      ctx.fillStyle = THEME_COLORS.bgDark;
       ctx.fillText(label, px + 4, py - 3);
       ctx.restore();
     });

@@ -82,7 +82,7 @@ export default function Register() {
   };
 
   const inputClass =
-    'w-full px-3.5 py-2.5 rounded-lg border border-slate-700 bg-slate-800/80 text-text-primary-dark placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-secondary/50 focus:border-secondary transition-colors text-sm';
+    'w-full px-3.5 py-2.5 rounded-lg border border-slate-700 bg-slate-800/80 text-text-primary-dark placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-secondary/50 focus:border-secondary transition-colors text-sm';
   const labelClass = 'block text-sm font-medium text-slate-300 mb-1';
 
   const roleBtn = (active) =>

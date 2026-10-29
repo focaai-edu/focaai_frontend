@@ -148,7 +148,7 @@ export default function StudentClassReview() {
               <p className="text-xs text-gray-500 dark:text-text-muted-dark mt-1 m-0">Tempo atento</p>
             </div>
             <div className={`p-5 ${cardBase} text-center`}>
-              <p className="text-2xl font-bold m-0 text-secondary">{formatNumber(studentData.time_distracted_minutes)}m</p>
+              <p className="text-2xl font-bold m-0 text-amber-500">{formatNumber(studentData.time_distracted_minutes)}m</p>
               <p className="text-xs text-gray-500 dark:text-text-muted-dark mt-1 m-0">Tempo desatento</p>
             </div>
             <div className={`p-5 ${cardBase} text-center`}>
@@ -159,7 +159,7 @@ export default function StudentClassReview() {
             </div>
             {studentData.time_no_camera_minutes > 0 && (
               <div className={`p-5 ${cardBase} text-center`}>
-                <p className="text-2xl font-bold m-0 text-amber-500">{formatNumber(studentData.time_no_camera_minutes)}m</p>
+                <p className="text-2xl font-bold m-0 text-slate-400">{formatNumber(studentData.time_no_camera_minutes)}m</p>
                 <p className="text-xs text-gray-500 dark:text-text-muted-dark mt-1 m-0">Sem câmera</p>
               </div>
             )}

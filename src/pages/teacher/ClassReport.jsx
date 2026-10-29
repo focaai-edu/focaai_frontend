@@ -14,18 +14,7 @@ import { summaryPreview } from '../../components/SummaryText';
 import { useSummaryRefresh } from '../../hooks/useSummaryRefresh';
 import { isLoadFailure } from '../../lib/loadError';
 import { formatSeconds } from '../../lib/duration';
-
-// Cor de atenção por faixa de % (verde / âmbar / vermelho).
-const attColor = (pct) => (pct >= 70 ? '#22C55E' : pct >= 40 ? '#F59E0B' : '#EF4444');
-
-const CHART_COLORS = {
-  primary: '#1B4F81',
-  secondary: '#4A90D9',
-  secondaryLight: '#7DB8F0',
-  grid: '#334155',
-  axis: '#64748B',
-  barLabel: '#94A3B8',
-};
+import { getAttentionColor, CHART_COLORS } from '../../lib/colors';
 
 // Configuração do gráfico de atenção ao longo da aula (#14 / V19)
 export const ATTENTION_CHART_CONFIG = {
@@ -152,10 +141,10 @@ export default function TeacherClassReport() {
 
       {/* Nota LGPD — privacy by design */}
       <div className="flex items-start gap-2 mb-8 px-4 py-3 rounded-lg bg-sky-50 dark:bg-primary/20 border border-secondary/30">
-        <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-primary dark:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
         </svg>
-        <p className="text-xs text-primary dark:text-secondary m-0 leading-relaxed">
+        <p className="text-xs text-primary dark:text-blue-300 m-0 leading-relaxed">
           <strong>Privacidade (LGPD):</strong> os dados individuais abaixo referem-se apenas a alunos que acompanharam pela própria conta, com webcam aberta. A câmera da sala mede atenção de forma <strong>anônima e agregada</strong> — sem identificar ou contar alunos.
         </p>
       </div>
@@ -218,7 +207,7 @@ export default function TeacherClassReport() {
                 />
                 <Tooltip content={<ChartTooltip suffix="" />} cursor={{ fill: 'rgba(51, 65, 85, 0.2)' }} />
                 <Bar dataKey="pct" radius={[0, 4, 4, 0]} label={{ position: 'right', fill: CHART_COLORS.barLabel, fontSize: 11, formatter: (v) => formatPercent(v) }}>
-                  {ranking.map((r, i) => <Cell key={i} fill={attColor(r.pct)} />)}
+                  {ranking.map((r, i) => <Cell key={i} fill={getAttentionColor(r.pct)} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -307,8 +296,8 @@ export default function TeacherClassReport() {
                   <div className="p-5 bg-bg-light dark:bg-bg-dark border-t border-border-light dark:border-border-dark">
                     <div className="grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] gap-3 mb-4">
                       <div><p className="text-xs text-gray-500 dark:text-text-muted-dark m-0 mb-0.5">Atento</p><p className="text-base font-semibold text-green-500 m-0">{formatNumber(student.time_attentive_minutes)}m</p></div>
-                      <div><p className="text-xs text-gray-500 dark:text-text-muted-dark m-0 mb-0.5">Desatento</p><p className="text-base font-semibold text-secondary m-0">{formatNumber(student.time_distracted_minutes)}m</p></div>
-                      <div><p className="text-xs text-gray-500 dark:text-text-muted-dark m-0 mb-0.5">Sem câmera</p><p className="text-base font-semibold text-amber-500 m-0">{formatNumber(student.time_no_camera_minutes)}m</p></div>
+                      <div><p className="text-xs text-gray-500 dark:text-text-muted-dark m-0 mb-0.5">Desatento</p><p className="text-base font-semibold text-amber-500 m-0">{formatNumber(student.time_distracted_minutes)}m</p></div>
+                      <div><p className="text-xs text-gray-500 dark:text-text-muted-dark m-0 mb-0.5">Sem câmera</p><p className="text-base font-semibold text-slate-400 m-0">{formatNumber(student.time_no_camera_minutes)}m</p></div>
                       <div><p className="text-xs text-gray-500 dark:text-text-muted-dark m-0 mb-0.5">Saiu/voltou</p><p className="text-base font-semibold text-gray-900 dark:text-text-primary-dark m-0">{student.times_left_and_returned}x</p></div>
                     </div>
                     {student.distraction_events?.length > 0 && (
@@ -319,7 +308,7 @@ export default function TeacherClassReport() {
                             <span className="text-gray-500 dark:text-text-muted-dark">
                               {evt.started_at ? new Date(evt.started_at).toLocaleTimeString('pt-BR') : '?'} — {evt.ended_at ? new Date(evt.ended_at).toLocaleTimeString('pt-BR') : '?'}
                             </span>
-                            <span className="ml-2 text-secondary">({formatSeconds(evt.duration_seconds)})</span>
+                            <span className="ml-2 text-amber-500">({formatSeconds(evt.duration_seconds)})</span>
                             {evt.summary ? (
                               <p className="mt-1 mb-0 text-xs text-gray-500 dark:text-text-muted-dark line-clamp-2">{summaryPreview(evt.summary)}</p>
                             ) : (

@@ -35,16 +35,18 @@
   /* Text */
   --color-text-primary-dark: #F1F5F9;
   --color-text-secondary-dark: #94A3B8;
-  --color-text-muted-dark: #64748B;
+  --color-text-muted-dark: #94A3B8;
   --color-text-primary-light: #0F172A;
   --color-text-secondary-light: #475569;
   --color-text-muted-light: #64748B;
 
   /* Status */
   --color-attentive: #22C55E;
-  --color-distracted: #4A90D9;
-  --color-no-camera: #F59E0B;
-  --color-disconnected: #9CA3AF;
+  --color-distracted: #F59E0B;
+  --color-no-camera: #94A3B8;
+  --color-disconnected: #EF4444;
+  --color-absent: #EF4444;
+  --color-break: #94A3B8;
 
   /* Semantic */
   --color-success: #22C55E;
