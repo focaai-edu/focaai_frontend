@@ -95,7 +95,7 @@ Sem matriz (ausente ou com menos de 16 valores), a pose é `0, 0, 0`.
 - percentual e tempos de atenção do próprio aluno (relatório do backend);
 - a linha do tempo completa dos seus eventos (atento, distraído, sem câmera), na escala real da aula: vai do `started_at` ao `ended_at` da aula, cada segmento tem posição e largura do seu início e duração, os intervalos sem evento aparecem como "Fora", evento aberto vai até o fim da aula, e aula de duração 0 não quebra a barra;
 - a lista de distrações com a duração em segundos ("20 s", "1 min 35 s") e a prévia do resumo sem marcadores. Um clique abre o resumo completo, renderizado como Markdown simples (títulos, listas, parágrafos e **negrito**, em `SummaryText`), sem HTML cru: HTML no resumo aparece como texto;
-- o resumo de uma distração da linha do tempo é casado pelo `attention_event_id` quando o relatório o traz, senão pelo instante de início (nunca pela string, que pode vir como "+00:00" ou "Z");
+- o resumo de uma distração da linha do tempo é casado só pelo `attention_event_id`, o mesmo do `summary_ready` (backend#3); sem id correspondente, vale a regra de "Gerando resumo…" / "Resumo não disponível…" (#40);
 - a transcrição completa da aula;
 - um download `.txt` com os resumos.
 
@@ -140,7 +140,7 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 | RF13 | ✅ | — | — |
 | RF14 | ✅ | O backend ainda ignora `duration_ms` e não aceita o trecho nos 10 s depois do fim (RN15/RN16) | backend#4 |
 | RF15 | ✅ | — | — |
-| RF16 | ✅ | O relatório ainda não traz `attention_event_id` nas distrações; o casamento usa o instante | backend#3 |
+| RF16 | ✅ | — | — |
 | RF17 | ⚠️ | Correto no frontend, mas horários de eventos e resumos aparecem 3 h adiantados porque o backend envia sem `Z` | backend#8 |
 | RF18 | ✅ | — | — |
 | RF19 | ✅ | — | — |
@@ -185,4 +185,4 @@ Sem regras fechadas; o comportamento atual é descrito só para referência.
 - Verificações: `npm run lint`, `npm test` e `npm run build` (#2).
 - Testes: Vitest com `jsdom` e `@testing-library/react` (config em `vite.config.js`). `npm test` roda a suíte uma vez; `npm run test:watch` fica observando. Os testes ficam ao lado do código (`*.test.js` / `*.test.jsx`); `tests/` guarda testes do próprio ferramental (ex.: a config do ESLint).
 - Lint: `eslint src/ public/` analisa `.js` e `.jsx` com globals do navegador, JSX e as regras de hooks do React (`rules-of-hooks` como erro, `exhaustive-deps` como warning). Erros reprovam; warnings são aceitos. O worker clássico de `public/` é analisado com os globals de Web Worker (#35).
-- e2e (#11): `npm run test:e2e` (Playwright, fora do `npm test` porque precisa de rede para o CDN do MediaPipe). O `globalSetup` gera os clipes `.y4m` (`yuv420p`) com `ffmpeg-static`; o Playwright sobe um backend do main na porta 5100 com um banco próprio terminado em `_test` (`E2E_DATABASE_URL`, padrão `foca_ai_e2e_test`, criado se faltar; o de dev nunca é usado), sem `GROQ_API_KEY`, e um Vite na 5190 apontando para ele. Cada teste cria professor, aluno e uma aula ao vivo pela API, abre a tela do aluno com a câmera falsa e confere o status na tela e as linhas de `attention_events`. Variáveis: `E2E_BACKEND_DIR`, `E2E_PYTHON`, `E2E_DATABASE_URL`, `E2E_CHROMIUM`, `E2E_FRONT_PORT`.
+- e2e (#11): `npm run test:e2e` (Playwright, fora do `npm test` porque precisa de rede para o CDN do MediaPipe). O `globalSetup` gera os clipes `.y4m` (`yuv420p`) com `ffmpeg-static`; o Playwright sobe um backend do main na porta 5100 com um banco próprio terminado em `_test` (`E2E_DATABASE_URL`, padrão `foca_ai_e2e_test`, criado se faltar; o de dev nunca é usado), sem `GROQ_API_KEY`, e um Vite na 5190 apontando para ele. Cada teste cria professor, aluno e uma aula ao vivo pela API, abre a tela do aluno com a câmera falsa e confere o status na tela e as linhas de `attention_events`. Pré-requisitos, variáveis e padrões no [README](../README.md): o banco vem do `TEST_DATABASE_URL` de `../backend/.env` com o nome trocado para `foca_ai_e2e_test`, e sem o Chromium do Playwright o `globalSetup` falha pedindo `npx playwright install chromium` (#40).

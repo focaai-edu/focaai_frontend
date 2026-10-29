@@ -69,14 +69,10 @@ export default function StudentClassReview() {
 
   // Timeline REAL: sequência completa de eventos do aluno (atento, distraído,
   // sem câmera...) com os status verdadeiros — não só as distrações. Anexa o
-  // resumo aos segmentos de distração para que o clique abra o painel lateral.
-  // Casa pelo `attention_event_id` quando o relatório o traz; senão pelo instante
-  // de início, e não pela string (os endpoints podem formatar o fuso de jeitos
-  // diferentes, "+00:00" × "Z") (#5, F22).
+  // resumo aos segmentos de distração para que o clique abra o painel lateral,
+  // casando pelo attention_event_id (o mesmo do summary_ready; backend#3, #40).
   const distractions = studentData?.distraction_events || [];
-  const findDistraction = (e) =>
-    distractions.find((d) => d.attention_event_id != null && d.attention_event_id === e.id)
-    ?? distractions.find((d) => d.attention_event_id == null && Date.parse(d.started_at) === Date.parse(e.started_at));
+  const findDistraction = (e) => distractions.find((d) => d.attention_event_id === e.id);
   const timelineEvents = attentionEvents.map((e, i) => {
     const match = e.status === 'distracted' ? findDistraction(e) : null;
     return {

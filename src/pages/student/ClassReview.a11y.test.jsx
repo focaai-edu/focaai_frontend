@@ -12,7 +12,7 @@ import api from '../../services/api';
 import StudentClassReview from './ClassReview';
 
 const CLASS = { id: 7, title: 'Biologia', status: 'ended', started_at: '2026-10-29T13:00:00Z', ended_at: '2026-10-29T13:30:00Z' };
-const D1 = { started_at: '2026-10-29T13:05:00Z', ended_at: '2026-10-29T13:06:00Z', duration_seconds: 60, summary: 'Primeiro resumo' };
+const D1 = { attention_event_id: 1, started_at: '2026-10-29T13:05:00Z', ended_at: '2026-10-29T13:06:00Z', duration_seconds: 60, summary: 'Primeiro resumo' };
 const D2 = { started_at: '2026-10-29T13:10:00Z', ended_at: '2026-10-29T13:11:00Z', duration_seconds: 60, summary: 'Segundo resumo' };
 
 beforeEach(() => {
