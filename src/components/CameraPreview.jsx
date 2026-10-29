@@ -1,49 +1,5 @@
 import { useEffect, useRef } from 'react';
-
-// MediaPipe FaceMesh contour index sets
-const FACE_OVAL = [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
-const LEFT_EYE  = [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246];
-const RIGHT_EYE = [362,382,381,380,374,373,390,249,263,466,388,387,386,385,384,398];
-const LIPS      = [61,146,91,181,84,17,314,405,321,375,291,308,324,318,402,317,14,87,178,88,95];
-const L_BROW    = [55,65,52,53,46];
-const R_BROW    = [285,295,282,283,276];
-const NOSE      = [168,6,197,195,5,4,1,19,94];
-
-function pt(buf, i, w, h) {
-  return [buf[i * 2] * w, buf[i * 2 + 1] * h];
-}
-
-function contour(ctx, buf, w, h, indices, color, lw, close = true) {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = lw;
-  ctx.beginPath();
-  const [x0, y0] = pt(buf, indices[0], w, h);
-  ctx.moveTo(x0, y0);
-  for (let i = 1; i < indices.length; i++) {
-    const [x, y] = pt(buf, indices[i], w, h);
-    ctx.lineTo(x, y);
-  }
-  if (close) ctx.closePath();
-  ctx.stroke();
-}
-
-function drawMesh(ctx, buf, w, h) {
-  const n = buf.length / 2;
-  ctx.fillStyle = 'rgba(200,200,200,0.7)';
-  for (let i = 0; i < n; i++) {
-    const [x, y] = pt(buf, i, w, h);
-    ctx.beginPath();
-    ctx.arc(x, y, 1.6, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  contour(ctx, buf, w, h, FACE_OVAL, 'rgba(200,200,200,0.5)',  1.5);
-  contour(ctx, buf, w, h, LEFT_EYE,  'rgba(50,220,100,0.95)', 1.8);
-  contour(ctx, buf, w, h, RIGHT_EYE, 'rgba(50,220,100,0.95)', 1.8);
-  contour(ctx, buf, w, h, LIPS,      'rgba(50,220,100,0.85)', 1.5);
-  contour(ctx, buf, w, h, L_BROW,    'rgba(50,220,100,0.9)',  1.8, false);
-  contour(ctx, buf, w, h, R_BROW,    'rgba(50,220,100,0.9)',  1.8, false);
-  contour(ctx, buf, w, h, NOSE,      'rgba(50,220,100,0.75)', 1.2, false);
-}
+import { computeFaceBox, drawFaceBox } from '../lib/faceBox';
 
 function drawHUD(ctx, pose, w, h) {
   const PAD = 10, BW = 150, BH = 72;
@@ -70,14 +26,20 @@ function drawHUD(ctx, pose, w, h) {
   });
 }
 
-export default function CameraPreview({ videoRef, source, error, landmarksRef, poseRef }) {
+export default function CameraPreview({ videoRef, source, error, landmarksRef, poseRef, status = 'attentive' }) {
   const canvasRef = useRef(null);
+  const statusRef = useRef(status);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   useEffect(() => {
     if (!videoRef?.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext ? canvas.getContext('2d') : null;
+    if (!ctx) return;
     let animId;
 
     function draw() {
@@ -86,16 +48,24 @@ export default function CameraPreview({ videoRef, source, error, landmarksRef, p
         canvas.height = video.videoHeight || 480;
         const { width: w, height: h } = canvas;
 
-        // Draw mirrored video + face mesh (inside mirror transform)
+        // Desenha vídeo espelhado horizontalmente
         ctx.save();
         ctx.translate(w, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(video, 0, 0, w, h);
-        const lm = landmarksRef?.current;
-        if (lm) drawMesh(ctx, lm, w, h);
         ctx.restore();
 
-        // Draw angle HUD (outside mirror transform — absolute position)
+        // Desenha caixa delimitadora do rosto com etiqueta de status (#55)
+        // Fora do espelhamento do canvas para que a etiqueta de texto não fique invertida
+        const lm = landmarksRef?.current;
+        if (lm && lm.length >= 2) {
+          const box = computeFaceBox(lm, { width: w, height: h, mirrored: true });
+          if (box) {
+            drawFaceBox(ctx, box, statusRef.current);
+          }
+        }
+
+        // Desenha HUD de ângulos (fora do espelhamento — posição absoluta)
         const pose = poseRef?.current;
         if (pose) drawHUD(ctx, pose, w, h);
       }
