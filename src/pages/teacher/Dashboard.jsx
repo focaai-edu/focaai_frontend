@@ -154,7 +154,6 @@ export default function TeacherDashboard() {
   }, []);
 
   useEffect(() => { fetchClasses(); }, [fetchClasses]);
-  useEffect(() => { socket.connect(); return () => {}; }, []);
 
   const openCreate = () => { setEditingClass(null); setShowModal(true); };
   const openEdit   = (cls) => { setEditingClass(cls); setShowModal(true); };

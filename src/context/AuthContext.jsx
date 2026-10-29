@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
+import socket from '../services/socket';
 
 const AuthContext = createContext(null);
 
@@ -25,6 +26,19 @@ export function AuthProvider({ children }) {
     return () => { cancelled = true; };
   }, []);
 
+  // O socket pertence à sessão: o servidor guarda o usuário da conexão no
+  // handshake, então ele só conecta com alguém autenticado e cai junto com a
+  // sessão. Trocar de conta na mesma aba abre uma conexão nova (#7, F06).
+  const userId = user?.id ?? null;
+  useEffect(() => {
+    if (userId === null) {
+      socket.disconnect();
+      return undefined;
+    }
+    if (!socket.connected) socket.connect();
+    return () => socket.disconnect();
+  }, [userId]);
+
   const login = useCallback(async (email, password) => {
     const res = await api.post('/api/auth/login', { email, password });
     setUser(res.data.user);
@@ -38,6 +52,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Antes de tudo: nada mais sai por esta conexão em nome do usuário que saiu.
+    socket.disconnect();
     try {
       await api.post('/api/auth/logout');
     } catch {

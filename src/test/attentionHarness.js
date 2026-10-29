@@ -22,14 +22,19 @@ export const lastWorker = () => FakeWorker.instances[FakeWorker.instances.length
 // Socket falso: registra emits em ordem e permite disparar eventos do servidor.
 export function createFakeSocket() {
   const handlers = {};
-  return {
+  let n = 0;
+  const s = {
     connected: true,
+    id: 'sid-0',
     emit: vi.fn(),
-    connect: vi.fn(),
+    // Cada conexão nova ganha outro id, como no socket.io.
+    connect: vi.fn(() => { s.connected = true; s.id = `sid-${++n}`; return s; }),
+    disconnect: vi.fn(() => { s.connected = false; s.id = undefined; return s; }),
     on(ev, fn) { (handlers[ev] ||= []).push(fn); },
     off(ev, fn) { handlers[ev] = fn ? (handlers[ev] || []).filter((h) => h !== fn) : []; },
     trigger(ev, data) { act(() => { (handlers[ev] || []).forEach((h) => h(data)); }); },
   };
+  return s;
 }
 
 // Sequência de emissões no formato da issue: ["attention_update", status] ou [evento].
