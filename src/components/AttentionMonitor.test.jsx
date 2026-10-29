@@ -117,7 +117,8 @@ describe('AttentionMonitor — sequência de attention_update (#8, camada 2)', (
     rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="exam" />);
     pose(w, { pitch: -30 });
     advance(2000, () => pose(w, { pitch: -30 }));
-    expect(emitted(socket.current)).toEqual([['attention_update', 'attentive']]);
+    // O segundo attentive é a reemissão da troca de modo (RF09, #3), não um distracted.
+    expect(emitted(socket.current)).toEqual([['attention_update', 'attentive'], ['attention_update', 'attentive']]);
   });
 
   it('CA19 (controle): em full_attention a mesma entrada emite distracted em 1 s', async () => {
@@ -143,8 +144,9 @@ describe('AttentionMonitor — sequência de attention_update (#8, camada 2)', (
     pose(w, { yaw: 40 });
     advance(1500, () => pose(w, { yaw: 40 }));
     const ups = updates(socket.current);
-    expect(ups.map((u) => u.status)).toEqual(['attentive', 'distracted']);
-    expect(ups[1].monitoring_mode).toBe('activity');
+    // attentive, reemissão da troca de modo (RF09, #3) e o distracted do yaw.
+    expect(ups.map((u) => u.status)).toEqual(['attentive', 'attentive', 'distracted']);
+    expect(ups[2].monitoring_mode).toBe('activity');
   });
 
   it('CA17 (RF05) / CA2: em break, 30 s de frames desatentos e sem rosto não emitem nada', async () => {
@@ -171,9 +173,12 @@ describe('AttentionMonitor — sequência de attention_update (#8, camada 2)', (
     noFace(w);
     advance(9000, (t) => {
       noFace(w);
-      if (at === null && emitted(socket.current).length === 2) at = t;
+      if (at === null && emitted(socket.current).length === 3) at = t;
     });
-    expect(emitted(socket.current)).toEqual([['attention_update', 'attentive'], ['attention_update', 'no_camera']]);
+    // O attentive do meio é a reemissão ao sair do break (RF09, #3 CA2).
+    expect(emitted(socket.current)).toEqual([
+      ['attention_update', 'attentive'], ['attention_update', 'attentive'], ['attention_update', 'no_camera'],
+    ]);
     expect(Math.abs(at - 8000)).toBeLessThanOrEqual(100);
   });
 
@@ -309,5 +314,68 @@ describe('AttentionMonitor — falha do detector (#8 CA8/CA9/CA23)', () => {
     expect(screen.queryByText(INIT_ERROR_TEXT)).toBeNull();
     pose(w);
     expect(emitted(socket.current)).toEqual([['attention_update', 'attentive']]);
+  });
+});
+
+describe('AttentionMonitor — reemissão na troca de modo (#3, RF09; #8 CA20)', () => {
+  it('CA1/CA20: attentive em full_attention, troca para activity reemite attentive com o modo novo', async () => {
+    const { w, rerender } = await mount();
+    pose(w);
+    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="activity" />);
+    expect(emitted(socket.current)).toEqual([['attention_update', 'attentive'], ['attention_update', 'attentive']]);
+    expect(updates(socket.current)[1].monitoring_mode).toBe('activity');
+  });
+
+  it('CA1: distracted confirmado é reemitido na troca de modo', async () => {
+    const { w, rerender } = await mount();
+    pose(w);
+    pose(w, { yaw: 40 });
+    advance(1100, () => pose(w, { yaw: 40 }));
+    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="exam" />);
+    expect(emitted(socket.current)).toEqual([
+      ['attention_update', 'attentive'], ['attention_update', 'distracted'], ['attention_update', 'distracted'],
+    ]);
+    expect(updates(socket.current)[2]).toMatchObject({ monitoring_mode: 'exam', yaw: 40 });
+  });
+
+  it('CA1: no_camera confirmado é reemitido na troca de modo, sem ângulos', async () => {
+    env.getUserMedia.mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'NotAllowedError' }));
+    const { rerender } = await mount();
+    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="activity" />);
+    expect(emitted(socket.current)).toEqual([['attention_update', 'no_camera'], ['attention_update', 'no_camera']]);
+    expect(updates(socket.current)[1]).not.toHaveProperty('yaw');
+  });
+
+  it('CA2/CA20: entrar em break não emite; sair de break emite o status uma vez', async () => {
+    const { w, rerender } = await mount();
+    pose(w);
+    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="break" />);
+    advance(3000, () => pose(w));
+    expect(emitted(socket.current)).toEqual([['attention_update', 'attentive']]);
+    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    advance(500, () => pose(w));
+    expect(emitted(socket.current)).toEqual([['attention_update', 'attentive'], ['attention_update', 'attentive']]);
+    expect(updates(socket.current)[1].monitoring_mode).toBe('full_attention');
+  });
+
+  it('CA2: mesmo modo de novo (rerender sem troca) não reemite', async () => {
+    const { w, rerender } = await mount();
+    pose(w);
+    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    expect(emitted(socket.current)).toEqual([['attention_update', 'attentive']]);
+  });
+
+  it('CA5 (F27): distracted congela no break, mesmo com 1 s+ de rosto atento, e sai ao fim do intervalo', async () => {
+    const { w, rerender } = await mount();
+    pose(w);
+    pose(w, { yaw: 40 });
+    advance(1100, () => pose(w, { yaw: 40 }));
+    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="break" />);
+    advance(3000, () => pose(w));
+    expect(emitted(socket.current)).toEqual([['attention_update', 'attentive'], ['attention_update', 'distracted']]);
+    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    expect(emitted(socket.current)).toEqual([
+      ['attention_update', 'attentive'], ['attention_update', 'distracted'], ['attention_update', 'distracted'],
+    ]);
   });
 });

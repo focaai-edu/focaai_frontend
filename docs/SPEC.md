@@ -61,11 +61,13 @@ Sem matriz (ausente ou com menos de 16 valores), a pose é `0, 0, 0`.
 
 **RF08 — Emissão.** `attention_update` é emitido quando um status é confirmado e é diferente do anterior (RF06/RF07), e sempre que RF09 ou RF10 pedirem, desde que o socket esteja conectado. O payload segue o contrato do backend (RN12): `class_id`, `status`, `source` e os ângulos e EAR do frame que confirmou o status.
 
-**RF09 — Reemissão na troca de modo.** Ao receber `monitoring_mode_changed` para um modo diferente de `break`, o cliente emite de novo o status confirmado atual, mesmo sem mudança. O backend fecha os eventos na troca (RN06) e depende dessa reemissão para abrir os novos com o modo correto. Em `break`, nada é emitido.
+**RF09 — Reemissão na troca de modo.** Ao receber `monitoring_mode_changed` para um modo diferente de `break`, o cliente emite de novo o status confirmado atual (`attentive`, `distracted` ou `no_camera`), mesmo sem mudança, com o modo novo e os ângulos do frame que o confirmou. O backend fecha os eventos na troca (RN06) e depende dessa reemissão para abrir os novos com o modo correto. Em `break`, nada é emitido e o status confirmado fica congelado (RF05); sair de `break` é uma troca como as outras, então o status congelado sai uma vez. Sem status confirmado ainda, nada sai (#3).
 
-**RF10 — Reconexão.** Na tela de aula ao vivo, quando o socket reconecta depois de uma queda, o cliente emite `join_class` de novo e, em seguida, o status confirmado atual.
+**RF10 — Reconexão.** Na tela de aula ao vivo, quando o socket (re)conecta, o cliente emite `join_class` de novo e, em seguida, o status confirmado atual (exceto em `break`). Se a tela abre com o socket desconectado, o `join_class` sai uma única vez, no `connect`. O aluno também consulta `GET /api/classes/:id` a cada reconexão e a cada `error` do servidor: se a aula não está mais `live` (o `class_ended` pode ter se perdido na queda), vai para a revisão, o que para câmera e detector. O professor, em `/teacher/classes/:id/live`, também refaz o `join_class` ao reconectar, para seguir recebendo `new_transcription`, `student_joined` e `student_left` (#3).
 
 ### 2.3 Aula ao vivo
+
+**RF21 — Erros do servidor.** Todo `error { message }` do servidor (enviado só ao remetente) aparece por 6 s num aviso não bloqueante (`role="alert"`), em qualquer tela, sem trocar de tela. Sem `message`, o aviso diz "Ocorreu um erro no servidor." Um erro novo substitui o anterior e reinicia o prazo (#3).
 
 **RF11 — Entrar e sair (aluno).** A tela `/student/classes/:id/live` só abre para aula `live`; caso contrário, volta ao painel. Ao abrir, emite `join_class`. Ao sair (botão "Sair" ou ao deixar a página), emite `leave_class`. Ao receber `class_ended`, vai para a revisão (`/student/classes/:id/review`).
 
@@ -110,8 +112,8 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 | RF06 | ✅ | — | — |
 | RF07 | ✅ | — | — |
 | RF08 | ✅ | — | — |
-| RF09 | ⚠️ | Só emite quando o status muda; a troca de modo não reemite | #3 |
-| RF10 | ⚠️ | A tela do aluno não refaz `join_class` ao reconectar | #3 |
+| RF09 | ✅ | — | — |
+| RF10 | ✅ | — | — |
 | RF11 | ✅ | — | — |
 | RF12 | ✅ | — | — |
 | RF13 | ⚠️ | Escuta `attention_alert`, que o backend nunca emite; `summary_ready` não é escutado | #5 (+ backend#3) |
@@ -122,11 +124,12 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 | RF18 | ✅ | — | — |
 | RF19 | ✅ | — | — |
 | RF20 | ✅ | — | — |
+| RF21 | ✅ | — | — |
 
 Cobertura por testes:
 - Camada 1, unidade (#2, #8), em `src/lib/attentionAlgo.test.js`: RF01 (identidade e rotações conhecidas, que fixam o sinal), RF02 (EAR, landmark ausente, largura zero), RF03 e RF04 (por modo), além da paridade entre o worker e `attentionAlgo.js`.
 - Camada 2, integração (#8), em `src/components/AttentionMonitor.test.jsx` e `src/pages/student/ClassLive.test.jsx`, com worker, socket e câmera falsos (`src/test/attentionHarness.js`) e timers falsos: sequência exata de `attention_update` para RF05–RF08, RF18 (troca de modo e falha do detector), RF19 e RF20.
-- RF09 e RF10 ganham teste com #3. As demais regras ainda não têm teste.
+- RF09, RF10 e RF21 (#3): reemissão na troca de modo em `AttentionMonitor.test.jsx`; reconexão do aluno (inclusive aula encerrada durante a queda) em `pages/student/ClassLive.test.jsx`; do professor em `pages/teacher/ClassLive.test.jsx`; aviso de erro em `components/ServerErrorAlert.test.jsx`. As demais regras ainda não têm teste.
 
 ## 4. Fora do fluxo central (experimental)
 

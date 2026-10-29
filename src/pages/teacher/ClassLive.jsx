@@ -116,8 +116,11 @@ export default function TeacherClassLive() {
 
   // ---- Socket events ----
   useEffect(() => {
-    if (!socket.connected) socket.connect();
-    socket.emit('join_class', { class_id: classId });
+    const join = () => socket.emit('join_class', { class_id: classId });
+    // Ao (re)conectar, entra de novo na sala para seguir recebendo transcrição e presença (F08).
+    socket.on('connect', join);
+    if (socket.connected) join();
+    else socket.connect();
 
     socket.on('student_joined', (data) => {
       setStudents(prev => {
@@ -144,6 +147,7 @@ export default function TeacherClassLive() {
       socket.off('student_joined'); socket.off('student_left');
       socket.off('monitoring_mode_changed'); socket.off('class_ended');
       socket.off('new_transcription');
+      socket.off('connect', join);
     };
   }, [classId, navigate]);
 

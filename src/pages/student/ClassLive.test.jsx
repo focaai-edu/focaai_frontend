@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router';
-import { setupEnvironment, teardownEnvironment, flush, emitted } from '../../test/attentionHarness';
+import { setupEnvironment, teardownEnvironment, flush, emitted, advance, lastWorker, pose } from '../../test/attentionHarness';
+import api from '../../services/api';
 
 const socket = vi.hoisted(() => ({ current: null }));
 vi.mock('../../services/socket', async () => {
@@ -21,7 +22,39 @@ vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ user: { id: 3, r
 import StudentClassLive from './ClassLive';
 
 let env;
+
+const LIVE = { id: 7, title: 'Biologia', status: 'live', monitoring_mode: 'full_attention', started_at: '2026-10-29T11:50:00Z' };
+
+function Review() {
+  return <p>Tela de revisão</p>;
+}
+
+async function renderLive() {
+  render(
+    <MemoryRouter initialEntries={['/student/classes/7/live']}>
+      <Routes>
+        <Route path="/student/classes/:id/live" element={<StudentClassLive />} />
+        <Route path="/student/classes/:id/review" element={<Review />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  await flush();
+  await flush();
+}
+
+// Aluno com distracted confirmado na aula ao vivo.
+async function renderDistracted() {
+  await renderLive();
+  const w = lastWorker();
+  w.send({ type: 'ready' });
+  pose(w);
+  pose(w, { yaw: 40 });
+  advance(1100, () => pose(w, { yaw: 40 }));
+  return w;
+}
+
 beforeEach(() => {
+  api.get.mockResolvedValue({ data: { class: LIVE } });
   env = setupEnvironment();
   socket.current.connected = true;
   socket.current.emit.mockClear();
@@ -43,5 +76,68 @@ describe('Aula ao vivo do aluno — câmera negada (#8 CA5)', () => {
     await flush();
     expect(emitted(socket.current)).toEqual([['join_class'], ['attention_update', 'no_camera']]);
     expect(screen.getByText('Não foi possível acessar a câmera. Seu professor verá você como sem câmera.')).toBeTruthy();
+  });
+});
+
+describe('Aula ao vivo do aluno — reconexão (#3 CA3; #8 CA21)', () => {
+  it('ao reconectar, emite join_class e em seguida o status confirmado', async () => {
+    await renderDistracted();
+    const before = emitted(socket.current).length;
+    socket.current.connected = false;
+    socket.current.trigger('disconnect', 'transport close');
+    socket.current.connected = true;
+    socket.current.trigger('connect');
+    await flush();
+    expect(emitted(socket.current).slice(before)).toEqual([['join_class'], ['attention_update', 'distracted']]);
+  });
+
+  it('entrando com o socket desconectado, conecta e emite um único join_class', async () => {
+    socket.current.connected = false;
+    await renderLive();
+    expect(socket.current.connect).toHaveBeenCalled();
+    expect(emitted(socket.current)).toEqual([]);
+    socket.current.connected = true;
+    socket.current.trigger('connect');
+    await flush();
+    expect(emitted(socket.current)).toEqual([['join_class']]);
+  });
+
+  it('reconectando durante o break, só emite join_class', async () => {
+    api.get.mockResolvedValue({ data: { class: { ...LIVE, monitoring_mode: 'break' } } });
+    await renderLive();
+    socket.current.trigger('connect');
+    await flush();
+    expect(emitted(socket.current)).toEqual([['join_class'], ['join_class']]);
+  });
+
+  it('CA6 (F07): ao reconectar com a aula já encerrada, para a câmera e vai para a revisão', async () => {
+    const w = await renderDistracted();
+    api.get.mockResolvedValue({ data: { class: { ...LIVE, status: 'ended' } } });
+    socket.current.trigger('connect');
+    await flush();
+    await flush();
+    expect(api.get).toHaveBeenLastCalledWith('/api/classes/7');
+    expect(screen.getByText('Tela de revisão')).toBeTruthy();
+    expect(env.stream.track.stop).toHaveBeenCalled();
+    expect(w.terminated).toBe(true);
+  });
+
+  it('CA6: ao reconectar com a aula ainda ao vivo, continua na tela', async () => {
+    await renderDistracted();
+    socket.current.trigger('connect');
+    await flush();
+    await flush();
+    expect(screen.queryByText('Tela de revisão')).toBeNull();
+  });
+
+  it('CA7 (F07, erro): error do servidor ao reentrar faz a mesma consulta e vai para a revisão', async () => {
+    await renderDistracted();
+    api.get.mockClear();
+    api.get.mockResolvedValue({ data: { class: { ...LIVE, status: 'ended' } } });
+    socket.current.trigger('error', { message: 'Aula nao esta ao vivo' });
+    await flush();
+    await flush();
+    expect(api.get).toHaveBeenCalledWith('/api/classes/7');
+    expect(screen.getByText('Tela de revisão')).toBeTruthy();
   });
 });
