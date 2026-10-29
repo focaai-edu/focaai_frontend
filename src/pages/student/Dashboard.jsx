@@ -21,7 +21,7 @@ export default function StudentDashboard() {
       setLiveClasses(liveRes.data.classes);
       setScheduledClasses(scheduledRes.data.classes);
       setEndedClasses(endedRes.data.classes);
-    } catch {} finally { setLoading(false); }
+    } catch { /* estado de erro próprio: #5 (CA10) */ } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchClasses(); }, [fetchClasses]);

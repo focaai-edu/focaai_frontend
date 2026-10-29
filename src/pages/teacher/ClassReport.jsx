@@ -41,7 +41,7 @@ export default function TeacherClassReport() {
       try {
         const res = await api.get(`/api/classes/${classId}/report`);
         if (!cancelled) setReport(res.data);
-      } catch {}
+      } catch { /* estado de erro próprio: #5 (CA10) */ }
       finally { if (!cancelled) setLoading(false); }
     }
     load();
