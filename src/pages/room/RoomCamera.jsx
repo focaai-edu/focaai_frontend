@@ -14,7 +14,10 @@ const LS_CAMERAS_KEY = 'foca_cameras';
 const LS_ACTIVE_KEY  = 'foca_active_camera_id';
 
 // Frame capture interval sent to backend for detection (ms)
-const FRAME_INTERVAL_MS = 3000;
+// Um frame por segundo e um por vez: o próximo só sai depois da resposta
+// (faces_identified) ou de um error, ou após FRAME_TIMEOUT_MS sem resposta (#51).
+const FRAME_INTERVAL_MS = 1000;
+const FRAME_TIMEOUT_MS  = 5000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -190,6 +193,7 @@ export default function RoomCamera() {
   const overlayRef    = useRef(null);
   const captureRef    = useRef(null);
   const intervalRef   = useRef(null);
+  const frameSentAtRef = useRef(null); // envio do frame ainda sem resposta (#51)
   const currentModeRef       = useRef('full_attention');
   const selectedClassIdRef   = useRef(null);
   const transcriptEndRef     = useRef(null);
@@ -396,6 +400,7 @@ export default function RoomCamera() {
   useEffect(() => {
     const onFacesIdentified = (data) => {
       if (selectedClassIdRef.current && data.class_id !== selectedClassIdRef.current) return;
+      frameSentAtRef.current = null;
       const { faces = [], img_w: W, img_h: H } = data;
       if (!W || !H) return;
 
@@ -415,8 +420,13 @@ export default function RoomCamera() {
         setDebugPose(null);
       }
     };
+    const onServerError = () => { frameSentAtRef.current = null; };
     socket.on('faces_identified', onFacesIdentified);
-    return () => socket.off('faces_identified', onFacesIdentified);
+    socket.on('error', onServerError);
+    return () => {
+      socket.off('faces_identified', onFacesIdentified);
+      socket.off('error', onServerError);
+    };
   }, [drawFaceBoxes]);
 
   // ── Frame capture + send ──────────────────────────────────────────────────
@@ -434,6 +444,7 @@ export default function RoomCamera() {
 
     const cid = selectedClassIdRef.current;
     if (!cid) return;
+    if (frameSentAtRef.current !== null && Date.now() - frameSentAtRef.current < FRAME_TIMEOUT_MS) return;
 
     const source = isWebcamRef.current ? videoRef.current : imgRef.current;
     if (!source) return;
@@ -453,6 +464,7 @@ export default function RoomCamera() {
     capture.getContext('2d').drawImage(source, 0, 0, W, H);
 
     const frame_base64 = capture.toDataURL('image/jpeg', 0.75).split(',')[1];
+    frameSentAtRef.current = Date.now();
     socket.emit('room_frame', { class_id: cid, frame_base64 });
   }, []);
 
@@ -461,6 +473,7 @@ export default function RoomCamera() {
 
     setAggregate(null);
     setDebugPose(null);
+    frameSentAtRef.current = null;
 
     // Send first frame immediately, then on interval
     captureAndSend();
