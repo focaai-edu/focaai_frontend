@@ -67,9 +67,10 @@ describe('Aula ao vivo do professor — áudio (#9 CA2/CA3/CA10)', () => {
     expect(env.getUserMedia).toHaveBeenCalledWith({ audio: true });
     act(() => { vi.advanceTimersByTime(5000); });
     act(() => { vi.advanceTimersByTime(5000); });
+    // #4 CA1: cada trecho leva a duração real.
     expect(audioChunks()).toEqual([
-      { class_id: 7, audio: 'QUJD' },
-      { class_id: 7, audio: 'QUJD' },
+      { class_id: 7, audio: 'QUJD', duration_ms: 5000 },
+      { class_id: 7, audio: 'QUJD', duration_ms: 5000 },
     ]);
     expect(screen.getByText('Gravando')).toBeTruthy();
   });
@@ -188,5 +189,31 @@ describe('Aula ao vivo do professor — duração (#9 CA14)', () => {
     await renderLive();
     expect(screen.getByText('26 h 10 min')).toBeTruthy();
     expect(screen.getByText('Aula aberta há mais de 24 horas. Encerre-a se ela já terminou.')).toBeTruthy();
+  });
+});
+
+describe('Aula ao vivo do professor — trechos de áudio (#4)', () => {
+  it('CA3/CA8: ao encerrar, o último trecho sai com a duração real antes de liberar o microfone', async () => {
+    await renderLive();
+    act(() => { vi.advanceTimersByTime(5000); });
+    act(() => { vi.advanceTimersByTime(3200); });
+    api.patch.mockResolvedValue({ data: {} });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Encerrar Aula' })); });
+    expect(audioChunks().map((c) => c.duration_ms)).toEqual([5000, 3200]);
+    expect(env.stream.track.stop).toHaveBeenCalled();
+  });
+
+  it('CA7 (erro): sem conexão, descarta o trecho e troca o indicador; ao voltar, nada do período sai', async () => {
+    await renderLive();
+    socket.current.connected = false;
+    socket.current.trigger('disconnect', 'transport close');
+    expect(screen.getByText('Sem conexão — o áudio não está sendo enviado')).toBeTruthy();
+    expect(screen.queryByText('Gravando')).toBeNull();
+    act(() => { vi.advanceTimersByTime(10000); });
+    expect(audioChunks()).toEqual([]);
+    socket.current.connected = true;
+    socket.current.trigger('connect');
+    expect(screen.getByText('Gravando')).toBeTruthy();
+    expect(audioChunks()).toEqual([]);
   });
 });

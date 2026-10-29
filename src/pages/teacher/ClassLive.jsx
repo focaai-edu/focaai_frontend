@@ -6,6 +6,7 @@ import StudentGrid from '../../components/StudentGrid';
 import OpenTooLongNotice from '../../components/OpenTooLongNotice';
 import { useElapsed } from '../../hooks/useElapsed';
 import { useLiveClassExitGuard } from '../../hooks/useLiveClassExitGuard';
+import { useAudioChunks } from '../../hooks/useAudioChunks';
 import { formatDuration } from '../../lib/duration';
 
 export default function TeacherClassLive() {
@@ -16,12 +17,8 @@ export default function TeacherClassLive() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [transcriptions, setTranscriptions] = useState([]);
-  const [micActive, setMicActive] = useState(false);
 
-  const mediaRecorderRef = useRef(null);
-  const streamRef = useRef(null);
   const bottomRef = useRef(null);
-  const micActiveRef = useRef(false);
 
   const classId = parseInt(id, 10);
 
@@ -35,71 +32,6 @@ export default function TeacherClassLive() {
     { key: 'exam', label: 'Prova' },
     { key: 'break', label: 'Intervalo' },
   ];
-
-  // ---- Audio capture ----
-  const startMic = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      micActiveRef.current = true;
-
-      const startChunk = () => {
-        if (!micActiveRef.current || !streamRef.current) return;
-
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-          ? 'audio/webm;codecs=opus'
-          : 'audio/webm';
-        const recorder = new MediaRecorder(stream, { mimeType });
-
-        recorder.ondataavailable = (e) => {
-          // Each stop() call produces a *complete* WebM file with its own header.
-          // Sending it whole avoids the "incomplete chunk" error from Groq Whisper.
-          if (e.data.size > 500 && socket.connected) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const base64 = reader.result.split(',')[1];
-              if (base64) {
-                socket.emit('audio_chunk', { class_id: classId, audio: base64 });
-              }
-            };
-            reader.readAsDataURL(e.data);
-          }
-        };
-
-        // When this recorder stops, start a new one (unless mic was turned off).
-        recorder.onstop = () => startChunk();
-        recorder.onerror = (e) => console.error('[audio] recorder error:', e);
-
-        recorder.start();
-        mediaRecorderRef.current = recorder;
-
-        // Stop after 5 s — triggers ondataavailable with a complete WebM file.
-        setTimeout(() => {
-          if (recorder.state === 'recording') recorder.stop();
-        }, 5000);
-      };
-
-      startChunk();
-      setMicActive(true);
-    } catch {
-      setError('Não foi possível acessar o microfone. A aula continua, mas sem transcrição.');
-    }
-  }, [classId]);
-
-  const stopMic = useCallback(() => {
-    micActiveRef.current = false;
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.onstop = null; // prevent auto-restart
-      if (mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-    setMicActive(false);
-  }, []);
 
   // ---- Data loading ----
   useEffect(() => {
@@ -167,14 +99,10 @@ export default function TeacherClassLive() {
     };
   }, [classId, navigate, allowLeave]);
 
-  // ---- Start/stop mic with class lifecycle ----
-  useEffect(() => {
-    if (!cls) return;
-    if (cls.status === 'live') {
-      startMic();
-    }
-    return () => stopMic();
-  }, [cls?.status, startMic, stopMic]);
+  // ---- Áudio: grava com a aula ao vivo, sem depender da câmera da sala (RF14) ----
+  const audio = useAudioChunks(classId, { enabled: cls?.status === 'live' });
+  const micActive = audio.status === 'recording';
+  const stopAudio = audio.stop;
 
   const elapsed = useElapsed(cls?.started_at);
 
@@ -201,10 +129,11 @@ export default function TeacherClassLive() {
       setError(err.response?.data?.error || 'Erro ao encerrar aula.');
       return;
     }
-    stopMic();
+    // Finaliza e envia o trecho em curso antes de liberar o microfone (#4, F10).
+    stopAudio();
     allowLeave();
     navigate(`/teacher/classes/${classId}/report`);
-  }, [classId, navigate, stopMic, allowLeave]);
+  }, [classId, navigate, stopAudio, allowLeave]);
 
   const isBreak = cls?.monitoring_mode === 'break';
 
@@ -231,6 +160,12 @@ export default function TeacherClassLive() {
               <span className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
                 Gravando
+              </span>
+            )}
+            {audio.status === 'offline' && (
+              <span role="status" className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-300" />
+                Sem conexão — o áudio não está sendo enviado
               </span>
             )}
           </div>
@@ -264,6 +199,11 @@ export default function TeacherClassLive() {
         ))}
       </div>
 
+      {audio.status === 'error' && (
+        <div className="px-8 py-3 bg-red-50 text-red-600 text-sm border-b border-red-100">
+          Não foi possível acessar o microfone. A aula continua, mas sem transcrição.
+        </div>
+      )}
       {error && (
         <div className="px-8 py-3 bg-red-50 text-red-600 text-sm border-b border-red-100">{error}</div>
       )}

@@ -6,25 +6,33 @@ export function useCamera() {
   const [error, setError] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  // Cada tentativa tem um número; sair da tela invalida as pendentes. Uma
+  // permissão que chega tarde para a câmera na hora, em vez de deixá-la acesa (#4, F11).
+  const attemptRef = useRef(0);
 
   // Try to start webcam
   const startWebcam = useCallback(async () => {
+    const attempt = ++attemptRef.current;
     setError(null);
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480, facingMode: 'user' },
         audio: false,
       });
+      const release = () => mediaStream.getTracks().forEach((t) => t.stop());
+      if (attempt !== attemptRef.current) { release(); return; }
 
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
         try {
           await videoRef.current.play();
         } catch (err) {
-          if (err.name === 'AbortError') return; // interrupted by another load — ignore
+          // Interrompido por outra carga: esta tentativa não vale mais.
+          if (err.name === 'AbortError') { release(); return; }
           throw err;
         }
       }
+      if (attempt !== attemptRef.current) { release(); return; }
 
       // Webcam desconectada (ou permissão revogada) durante a aula (#8, F03).
       mediaStream.getVideoTracks().forEach((track) => {
@@ -69,6 +77,8 @@ export function useCamera() {
       img.src = frameBase64;
     }
   }, [stopWebcam]);
+
+  useEffect(() => () => { attemptRef.current += 1; }, []);
 
   // Cleanup on unmount
   useEffect(() => {

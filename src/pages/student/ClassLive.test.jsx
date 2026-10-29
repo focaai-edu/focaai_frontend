@@ -208,3 +208,15 @@ describe('Aula ao vivo do aluno — duração (#9 CA14)', () => {
     expect(screen.getByText('Aula aberta há mais de 24 horas. Encerre-a se ela já terminou.')).toBeTruthy();
   });
 });
+
+describe('Aula ao vivo do aluno — transcrição (#4 CA11)', () => {
+  it('new_transcription aparece com o horário local do timestamp UTC (Z); de outra aula, não', async () => {
+    await renderLive();
+    const ts = '2026-10-29T12:00:05Z';
+    socket.current.trigger('new_transcription', { class_id: 7, content: 'A clorofila absorve luz.', timestamp: ts });
+    socket.current.trigger('new_transcription', { class_id: 99, content: 'Outra aula.', timestamp: ts });
+    expect(screen.getByText('A clorofila absorve luz.')).toBeTruthy();
+    expect(screen.getByText(new Date(ts).toLocaleTimeString('pt-BR'))).toBeTruthy();
+    expect(screen.queryByText('Outra aula.')).toBeNull();
+  });
+});
