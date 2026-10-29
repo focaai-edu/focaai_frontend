@@ -26,6 +26,11 @@ export function useCamera() {
         }
       }
 
+      // Webcam desconectada (ou permissão revogada) durante a aula (#8, F03).
+      mediaStream.getVideoTracks().forEach((track) => {
+        track.addEventListener('ended', () => setError('Câmera desconectada.'));
+      });
+
       setStream(mediaStream);
       setSource('webcam');
     } catch (err) {

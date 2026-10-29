@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import socket from '../services/socket';
 import { isDistracted } from '../lib/attentionAlgo';
 
@@ -14,34 +14,51 @@ import { isDistracted } from '../lib/attentionAlgo';
  * limiar virar enxurrada de eventos — sem alterar a fronteira de decisão.
  *
  * ESPECÍFICO DO ALUNO (não existe no /room): status `no_camera` por ausência de
- * rosto e emissão de `attention_update` apenas na troca confirmada de status.
+ * rosto ou câmera indisponível, `distracted` com a aba oculta, e emissão de
+ * `attention_update` apenas na troca confirmada de status.
  */
 
 const STABLE_MS = 1000;       // tempo que um novo status precisa se manter p/ valer
-const NO_FACE_SECONDS = 8;    // segundos sem rosto até marcar `no_camera`
+const NO_FACE_MS = 8000;      // tempo sem rosto até marcar `no_camera`
+const HIDDEN_MS = 1000;       // aba oculta por mais que isso conta como `distracted`
 
 export function useAttention(classId, studentId, monitoringMode = 'full_attention', source = 'webcam') {
   const [status, setStatus] = useState('disconnected');
   const [earValue, setEarValue] = useState(1.0);
   const [poseValues, setPoseValues] = useState({ yaw: 0, pitch: 0, roll: 0 });
 
+  // Parâmetros do render mais recente: callbacks, timers e listeners leem daqui,
+  // então nunca decidem com um modo antigo (#8, F01).
+  const params = useRef(null);
+  params.current = { classId, studentId, monitoringMode, source };
+
   const currentStatus = useRef(null);     // status confirmado (exibido + persistido)
   const candidate = useRef(null);         // status pendente de confirmação
   const candidateSince = useRef(0);       // quando o candidato apareceu
-  const noFaceSeconds = useRef(0);
-  const lastFrameTime = useRef(Date.now());
+  const noFaceSince = useRef(null);       // início da ausência de rosto atual (null = há rosto)
+  const hidden = useRef(false);           // aba oculta: frames são ignorados
 
   const emitUpdate = useCallback((newStatus, pose) => {
     if (!socket.connected) return;
+    const p = params.current;
     socket.emit('attention_update', {
-      class_id: classId,
-      student_id: studentId,
+      class_id: p.classId,
+      student_id: p.studentId,
       status: newStatus,
-      source,
-      monitoring_mode: monitoringMode,
+      source: p.source,
+      monitoring_mode: p.monitoringMode,
       ...(pose ? { yaw: pose.yaw, pitch: pose.pitch, roll: pose.roll, ear: pose.ear } : {}),
     });
-  }, [classId, studentId, source, monitoringMode]);
+  }, []);
+
+  // Confirma um status na hora, sem estabilização.
+  const confirm = useCallback((newStatus, pose) => {
+    if (newStatus === currentStatus.current) return;
+    currentStatus.current = newStatus;
+    candidate.current = newStatus;
+    setStatus(newStatus);
+    emitUpdate(newStatus, pose);
+  }, [emitUpdate]);
 
   // Confirma um status (com estabilização) e emite na troca.
   const commit = useCallback((newStatus, pose) => {
@@ -59,45 +76,72 @@ export function useAttention(classId, studentId, monitoringMode = 'full_attentio
       }
       if (now - candidateSince.current < STABLE_MS) return;
     }
-    currentStatus.current = newStatus;
-    candidate.current = newStatus;
-    setStatus(newStatus);
-    emitUpdate(newStatus, pose);
-  }, [emitUpdate]);
+    confirm(newStatus, pose);
+  }, [confirm]);
 
   const processPose = useCallback((pose) => {
-    lastFrameTime.current = Date.now();
     setPoseValues({ yaw: pose.yaw, pitch: pose.pitch, roll: pose.roll });
     setEarValue(pose.ear);
 
-    // Intervalo: sem monitoramento — sempre atento (igual ao /room).
-    const raw = monitoringMode === 'break'
-      ? 'attentive'
-      : (isDistracted(pose.yaw, pose.pitch, pose.ear, monitoringMode) ? 'distracted' : 'attentive');
+    const mode = params.current.monitoringMode;
+    // Intervalo: sem monitoramento — nada é confirmado nem emitido (RF05).
+    // Aba oculta: o status fica no `distracted` da aba (#8, F02).
+    if (mode === 'break' || hidden.current) return;
 
+    const raw = isDistracted(pose.yaw, pose.pitch, pose.ear, mode) ? 'distracted' : 'attentive';
     commit(raw, pose);
-  }, [monitoringMode, commit]);
+  }, [commit]);
 
+  // A ausência conta a partir do primeiro frame sem rosto processado fora do
+  // intervalo; o tempo do break e o de carga do detector não entram (#8, F14).
   const processNoFace = useCallback(() => {
-    if (monitoringMode === 'break') return;
+    if (params.current.monitoringMode === 'break' || hidden.current) {
+      noFaceSince.current = null;
+      return;
+    }
 
     const now = Date.now();
-    const dt = (now - lastFrameTime.current) / 1000;
-    lastFrameTime.current = now;
-
-    noFaceSeconds.current += dt;
-    if (noFaceSeconds.current >= NO_FACE_SECONDS && currentStatus.current !== 'no_camera') {
-      currentStatus.current = 'no_camera';
-      candidate.current = 'no_camera';
-      setStatus('no_camera');
-      emitUpdate('no_camera', null);
-    }
-  }, [monitoringMode, emitUpdate]);
+    if (noFaceSince.current === null) noFaceSince.current = now;
+    if (now - noFaceSince.current >= NO_FACE_MS) confirm('no_camera', null);
+  }, [confirm]);
 
   // Rosto reapareceu — zera o contador de ausência.
   const resetNoFace = useCallback(() => {
-    noFaceSeconds.current = 0;
+    noFaceSince.current = null;
   }, []);
+
+  // Câmera negada, ausente ou desconectada, ou detector que não carregou (#8, F03/F16).
+  const markNoCamera = useCallback(() => {
+    if (params.current.monitoringMode === 'break') return;
+    confirm('no_camera', null);
+  }, [confirm]);
+
+  // Aba oculta: o navegador para de entregar frames, então o status congelaria.
+  // Depois de HIDDEN_MS oculta, o aluno conta como `distracted` (#8, F02).
+  useEffect(() => {
+    let timer = null;
+    function onVisibility() {
+      clearTimeout(timer);
+      timer = null;
+      if (document.visibilityState === 'hidden') {
+        hidden.current = true;
+        timer = setTimeout(() => {
+          if (params.current.monitoringMode === 'break' || currentStatus.current === 'no_camera') return;
+          confirm('distracted', null);
+        }, HIDDEN_MS);
+      } else {
+        hidden.current = false;
+        // Ao voltar, a decisão recomeça pelos frames, com estabilização normal.
+        candidate.current = currentStatus.current;
+        noFaceSince.current = null;
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [confirm]);
 
   return {
     status,
@@ -106,6 +150,7 @@ export function useAttention(classId, studentId, monitoringMode = 'full_attentio
     processPose,
     processNoFace,
     resetNoFace,
+    markNoCamera,
     currentStatus: currentStatus.current,
   };
 }

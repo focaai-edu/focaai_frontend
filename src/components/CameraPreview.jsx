@@ -117,7 +117,7 @@ export default function CameraPreview({ videoRef, source, error, landmarksRef, p
       />
       {error && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70 rounded-xl">
-          <p className="text-red-500 text-sm text-center p-4">{error}</p>
+          <p role="alert" className="text-red-500 text-sm text-center p-4">{error}</p>
         </div>
       )}
       {source && !error && (
