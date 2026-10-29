@@ -8,7 +8,7 @@ vi.mock('../services/socket', async () => {
   socket.current = createFakeSocket();
   return { default: socket.current };
 });
-vi.mock('../services/api', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('../services/api', () => ({ default: { get: vi.fn(), post: vi.fn() }, onUnauthorized: () => () => {} }));
 // A Sidebar desenha partículas num canvas; irrelevante aqui.
 vi.mock('../components/ParticleField', () => ({ default: () => null }));
 
