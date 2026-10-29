@@ -6,6 +6,7 @@ import AttentionTimeline from '../../components/AttentionTimeline';
 import TranscriptPanel from '../../components/TranscriptPanel';
 import { useAuth } from '../../context/AuthContext';
 import LoadError from '../../components/LoadError';
+import Dialog from '../../components/Dialog';
 import SummaryText, { summaryPreview } from '../../components/SummaryText';
 import { useSummaryRefresh } from '../../hooks/useSummaryRefresh';
 import { isLoadFailure } from '../../lib/loadError';
@@ -190,14 +191,16 @@ export default function StudentClassReview() {
               <h2 className="text-base font-semibold p-4 border-b border-gray-200 dark:border-[#334155] m-0 text-gray-900 dark:text-[#F1F5F9]">
                 Resumos dos Momentos Perdidos ({events.length})
               </h2>
-              <div className="divide-y divide-gray-200 dark:divide-[#334155]">
+              {/* Cada item é um botão: abre o resumo com clique, Enter ou Espaço (#16, V10). */}
+              <ul data-distraction-list className="divide-y divide-gray-200 dark:divide-[#334155] m-0 p-0 list-none">
                 {events.map((evt, i) => (
-                  <div
-                    key={i}
+                  <li key={i}>
+                  <button
+                    type="button"
                     onClick={() => handleDistractionClick(evt)}
-                    className="p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-[#0F172A]/50 transition-colors"
+                    className="w-full text-left block p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-[#0F172A]/50 transition-colors bg-transparent border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
                   >
-                    <div className="flex justify-between items-center mb-1">
+                    <span className="flex justify-between items-center mb-1">
                       <span className="text-xs font-mono text-gray-500 dark:text-[#64748B]">
                         {evt.started_at ? new Date(evt.started_at).toLocaleTimeString('pt-BR') : '?'}
                         {' → '}
@@ -206,15 +209,16 @@ export default function StudentClassReview() {
                       <span className="text-xs text-[#4A90D9] font-semibold">
                         {formatSeconds(evt.duration_seconds)}
                       </span>
-                    </div>
+                    </span>
                     {evt.summary ? (
-                      <p className="text-sm text-gray-700 dark:text-[#CBD5E1] m-0 line-clamp-2">{summaryPreview(evt.summary)}</p>
+                      <span className="block text-sm text-gray-700 dark:text-[#CBD5E1] m-0 line-clamp-2">{summaryPreview(evt.summary)}</span>
                     ) : (
-                      <p className="text-sm text-gray-400 dark:text-[#475569] m-0 italic">{noSummaryText}</p>
+                      <span className="block text-sm text-gray-400 dark:text-[#475569] m-0 italic">{noSummaryText}</span>
                     )}
-                  </div>
+                  </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           )}
 
@@ -236,14 +240,17 @@ export default function StudentClassReview() {
       {sidePanel && (
         <>
           <div className="fixed inset-0 bg-black/30 z-[999]" onClick={() => setSidePanel(null)} />
-          <div role="dialog" aria-modal="true" aria-label="Resumo do trecho perdido" className="fixed top-0 right-0 w-[400px] h-full bg-white dark:bg-[#1E293B] border-l border-gray-200 dark:border-[#334155] shadow-[-4px_0_20px_rgba(0,0,0,0.2)] z-[1000] flex flex-col">
+          <Dialog titleId="summary-panel-title" onClose={() => setSidePanel(null)} className="fixed top-0 right-0 w-[400px] h-full bg-white dark:bg-[#1E293B] border-l border-gray-200 dark:border-[#334155] shadow-[-4px_0_20px_rgba(0,0,0,0.2)] z-[1000] flex flex-col">
             <div className="p-4 border-b border-gray-200 dark:border-[#334155] flex justify-between items-center">
-              <h3 className="text-base font-semibold m-0 text-gray-900 dark:text-[#F1F5F9]">
+              <h3 id="summary-panel-title" className="text-base font-semibold m-0 text-gray-900 dark:text-[#F1F5F9]">
+                <span className="sr-only">Resumo de </span>
                 {sidePanel.started_at ? new Date(sidePanel.started_at).toLocaleTimeString('pt-BR') : ''}
                 {' — '}
                 {sidePanel.ended_at ? new Date(sidePanel.ended_at).toLocaleTimeString('pt-BR') : ''}
               </h3>
               <button
+                type="button"
+                aria-label="Fechar resumo"
                 onClick={() => setSidePanel(null)}
                 className="bg-transparent border-none text-xl text-gray-500 dark:text-[#64748B] cursor-pointer hover:text-gray-900 dark:hover:text-white"
               >
@@ -272,7 +279,7 @@ export default function StudentClassReview() {
                 Baixar este resumo
               </button>
             </div>
-          </div>
+          </Dialog>
         </>
       )}
     </Layout>

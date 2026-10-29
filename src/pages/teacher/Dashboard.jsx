@@ -4,6 +4,7 @@ import Layout from '../../components/Layout';
 import api from '../../services/api';
 import { formatDuration } from '../../lib/duration';
 import LoadError from '../../components/LoadError';
+import Dialog from '../../components/Dialog';
 import { isLoadFailure } from '../../lib/loadError';
 
 const STATUS_LABELS = { live: 'Ao Vivo', scheduled: 'Agendada', ended: 'Encerrada' };
@@ -52,15 +53,19 @@ function ClassFormModal({ editing, onSave, onClose }) {
       className="fixed inset-0 bg-black/40 z-[1000] flex items-center justify-center p-4"
       onClick={onClose}
     >
-      <div
+      <Dialog
+        titleId="class-form-title"
+        onClose={onClose}
         className="bg-white dark:bg-[#1E293B] rounded-2xl p-6 max-w-md w-full shadow-xl"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-[#F1F5F9]">
+          <h2 id="class-form-title" className="text-lg font-semibold text-gray-900 dark:text-[#F1F5F9]">
             {isEdit ? 'Editar Aula' : 'Nova Aula'}
           </h2>
           <button
+            type="button"
+            aria-label="Fechar janela"
             onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 dark:text-[#64748B] hover:text-gray-600 dark:hover:text-[#94A3B8] hover:bg-gray-100 dark:hover:bg-[#334155] transition-colors border-none bg-transparent cursor-pointer"
           >
@@ -119,7 +124,7 @@ function ClassFormModal({ editing, onSave, onClose }) {
             </button>
           </div>
         </form>
-      </div>
+      </Dialog>
     </div>
   );
 }
@@ -355,6 +360,7 @@ export default function TeacherDashboard() {
                     <button
                       onClick={() => openEdit(cls)}
                       title="Editar aula"
+                      aria-label={`Editar aula ${cls.title}`}
                       className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 dark:border-[#334155] text-gray-500 dark:text-[#94A3B8] hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors bg-transparent cursor-pointer"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -365,6 +371,7 @@ export default function TeacherDashboard() {
                     <button
                       onClick={() => handleDelete(cls)}
                       title="Excluir aula"
+                      aria-label={`Excluir aula ${cls.title}`}
                       className="w-8 h-8 flex items-center justify-center rounded-lg border border-red-100 dark:border-red-900/40 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors bg-transparent cursor-pointer"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -411,6 +418,7 @@ export default function TeacherDashboard() {
                     <button
                       onClick={() => openEdit(cls)}
                       title="Editar aula"
+                      aria-label={`Editar aula ${cls.title}`}
                       className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 dark:border-[#334155] text-gray-500 dark:text-[#94A3B8] hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors bg-transparent cursor-pointer"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

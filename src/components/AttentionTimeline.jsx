@@ -71,20 +71,27 @@ export default function AttentionTimeline({ events = [], classStart, classEnd, o
       <div className="relative h-8 rounded-lg overflow-hidden border border-gray-200 mb-3">
         {segments.map((seg, i) => {
           const clickable = seg.status === 'distracted' && Boolean(onPeriodClick);
-          return (
-            <div
+          const label = `${STATUS_LABELS[seg.status] || seg.status}: ${formatSeconds((seg.to - seg.from) / 1000)}`;
+          const style = {
+            left: `${seg.left}%`,
+            width: `${seg.width}%`,
+            backgroundColor: STATUS_COLORS[seg.status] || '#9CA3AF',
+            cursor: clickable ? 'pointer' : 'default',
+          };
+          // Trecho desatento abre o resumo: é um botão, operável pelo teclado (#16).
+          return clickable ? (
+            <button
               key={i}
+              type="button"
               data-status={seg.status}
-              title={`${STATUS_LABELS[seg.status] || seg.status}: ${formatSeconds((seg.to - seg.from) / 1000)}`}
-              onClick={() => clickable && onPeriodClick(seg.event)}
-              className="absolute top-0 h-full transition-opacity hover:opacity-80"
-              style={{
-                left: `${seg.left}%`,
-                width: `${seg.width}%`,
-                backgroundColor: STATUS_COLORS[seg.status] || '#9CA3AF',
-                cursor: clickable ? 'pointer' : 'default',
-              }}
+              title={label}
+              aria-label={`${label} — abrir resumo`}
+              onClick={() => onPeriodClick(seg.event)}
+              className="absolute top-0 h-full p-0 border-none transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+              style={style}
             />
+          ) : (
+            <div key={i} data-status={seg.status} title={label} className="absolute top-0 h-full transition-opacity hover:opacity-80" style={style} />
           );
         })}
       </div>

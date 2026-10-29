@@ -107,6 +107,8 @@ O relatório do professor segue a mesma regra de duração, prévia e recarga do
 
 **RF27 — Erro de carga e atualização.** Falha de rede ou resposta 5xx no painel do aluno, na revisão, no relatório, no painel do professor ou no painel de transcrição mostra "Não foi possível carregar." com "Tentar de novo" (refaz a requisição), e não o texto de estado vazio. Respostas 4xx (não participou, aula não encerrada) continuam no estado vazio. O painel do aluno recarrega as aulas a cada 15 s e ao focar a janela, então uma aula que começa mostra "Entrar" sem recarregar a página; se uma dessas recargas falhar, a lista que já estava na tela continua (#5).
 
+**RF28 — Diálogos e teclado.** Todo modal e gaveta (Nova/Editar Aula, configurações e câmera do `/room`, resumo da revisão, "Encerrar a aula também?") usa o componente `Dialog`: `role="dialog"`, `aria-modal="true"` e `aria-labelledby` no título; ao abrir, o foco entra no diálogo; Tab e Shift+Tab ficam presos dentro dele; Escape fecha (no diálogo de saída, Escape = "Continuar na aula"); ao fechar, o foco volta para quem abriu, inclusive num diálogo aberto por cima de outro. Botões só com ícone têm `aria-label` ("Fechar janela", "Editar aula <título>", "Excluir aula <título>", "Configurações", "Fechar configurações", "Editar/Remover câmera <nome>", "Fechar resumo"). Na revisão, cada distração da lista e cada trecho desatento da linha do tempo é um `<button>` com foco visível (`focus-visible:ring-primary`), que abre o resumo com Enter ou Espaço; a câmera da lista do `/room` também é um botão (`aria-pressed`). A gaveta do menu no celular (#12) fecha com Escape e devolve o foco ao botão de menu (#16).
+
 **RF17 — Datas.** As datas vêm da API em UTC com `Z` (RN24) e são exibidas no horário local do navegador, em `pt-BR`.
 
 ### 2.5 Processamento
@@ -146,6 +148,7 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 | RF25 | ✅ | — | — |
 | RF26 | ✅ | — | — |
 | RF27 | ✅ | — | — |
+| RF28 | ✅ | — | — |
 
 Cobertura por testes:
 - Camada 1, unidade (#2, #8), em `src/lib/attentionAlgo.test.js`: RF01 (identidade e rotações conhecidas, que fixam o sinal), RF02 (EAR, landmark ausente, largura zero), RF03 e RF04 (por modo), além da paridade entre o worker e `attentionAlgo.js`.
@@ -153,6 +156,7 @@ Cobertura por testes:
 - RF09, RF10 e RF21 (#3): reemissão na troca de modo em `AttentionMonitor.test.jsx`; reconexão do aluno (inclusive aula encerrada durante a queda) em `pages/student/ClassLive.test.jsx`; do professor em `pages/teacher/ClassLive.test.jsx`; aviso de erro em `components/ServerErrorAlert.test.jsx`. RF22 (#7, #32): ciclo do socket com a sessão em `context/AuthContext.test.jsx` e sessão encerrada em outra aba em `context/SessionEnded.test.jsx` e contrato de identidade em `pages/student/ClassLive.test.jsx`. RF23–RF26 (#9): `pages/teacher/Dashboard.test.jsx`, `pages/teacher/ClassLive.test.jsx`, `pages/student/ClassLive.test.jsx`, `pages/room/RoomCamera.test.jsx` e `lib/duration.test.js`. As demais regras ainda não têm teste.
 - RF14 (#4): gravação em `hooks/useAudioChunks.test.js` (duração com timers falsos, descarte ≤ 500 bytes, offline, último trecho, permissão tardia) e nas telas (`pages/teacher/ClassLive.test.jsx`, `pages/room/RoomCamera.test.jsx`); gravação única em `tests/single-audio-recorder.test.js`; webcam com permissão tardia em `components/AttentionMonitor.test.jsx`.
 - RF13, RF16 e RF27 (#5): `components/SummaryText.test.jsx`, `components/AttentionTimeline.test.jsx`, `components/TranscriptPanel.test.jsx`, `pages/student/ClassReview.test.jsx`, `pages/student/ClassLive.test.jsx`, `pages/student/Dashboard.test.jsx`, `pages/teacher/ClassReport.summaries.test.jsx`, `pages/teacher/Dashboard.test.jsx` e `lib/duration.test.js`.
+- RF28 (#16): `components/Dialog.test.jsx` e, por papel e teclado (user-event), `pages/teacher/Dashboard.a11y.test.jsx`, `pages/student/ClassReview.a11y.test.jsx` e `pages/room/RoomCamera.a11y.test.jsx`.
 - Relatório do professor (#14, em `src/pages/teacher/ClassReport.test.jsx`): calibração do gráfico de atenção da turma (`AreaChart`) com domínio fixo `[0, 100]`, marcações `[0, 25, 50, 75, 100]`, formatação percentual sem repetição e margem esquerda `>= 0` prevenindo corte dos dígitos.
 - Layout responsivo (#12, em `src/components/Layout.test.jsx`): colapso da sidebar no mobile (< 768px) como gaveta com backdrop, botão de menu com `aria-expanded`, fechamento por clique externo, tecla Escape e navegação por link, com margem responsiva (`ml-0 md:ml-[240px]`) e eliminação de transbordamento horizontal.
 - Telas de aula ao vivo no mobile (#13, em `src/pages/ClassLiveResponsive.test.jsx`): layout empilhado (`flex-col md:flex-row`) no aluno com câmera e monitor em largura total sem esmagamento e transcrição empilhada abaixo (`w-full md:w-[300px]`); no professor, seletor de modos sem truncamento (`overflow-x-auto flex-nowrap`) e empilhamento da grade de alunos e transcrição eliminando divisão de 170px.

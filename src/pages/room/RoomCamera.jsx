@@ -4,6 +4,7 @@ import socket from '../../services/socket';
 import api from '../../services/api';
 import { useLiveClassExitGuard } from '../../hooks/useLiveClassExitGuard';
 import { useAudioChunks } from '../../hooks/useAudioChunks';
+import Dialog from '../../components/Dialog';
 import { MODE_LABELS, pctColor } from '../../lib/attentionAlgo';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -55,12 +56,12 @@ function CameraFormModal({ camera, onSave, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 z-[1000] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[#1E293B] rounded-2xl p-6 max-w-md w-full shadow-xl" onClick={e => e.stopPropagation()}>
+      <Dialog titleId="camera-form-title" onClose={onClose} className="bg-[#1E293B] rounded-2xl p-6 max-w-md w-full shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-[#F1F5F9]">
+          <h2 id="camera-form-title" className="text-lg font-semibold text-[#F1F5F9]">
             {camera ? 'Editar câmera' : 'Adicionar câmera'}
           </h2>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-[#64748B] hover:bg-[#334155] transition-colors border-none bg-transparent cursor-pointer">
+          <button type="button" aria-label="Fechar janela" onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-[#64748B] hover:bg-[#334155] transition-colors border-none bg-transparent cursor-pointer">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -131,7 +132,7 @@ function CameraFormModal({ camera, onSave, onClose }) {
             </button>
           </div>
         </form>
-      </div>
+      </Dialog>
     </div>
   );
 }
@@ -526,8 +527,11 @@ export default function RoomCamera() {
           )}
 
           <button
+            type="button"
             onClick={() => setShowSettings(s => !s)}
             title="Configurações"
+            aria-label="Configurações"
+            aria-expanded={showSettings}
             className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors border-none cursor-pointer ${showSettings ? 'bg-white/20 text-white' : 'text-white/70 bg-transparent hover:bg-white/10'}`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -734,10 +738,12 @@ export default function RoomCamera() {
 
         {/* Settings overlay */}
         {showSettings && (
-          <div className="absolute inset-y-0 right-0 w-[300px] bg-[#1E293B] border-l border-[#334155] z-50 flex flex-col shadow-2xl">
+          <Dialog titleId="room-settings-title" onClose={() => setShowSettings(false)} className="absolute inset-y-0 right-0 w-[300px] bg-[#1E293B] border-l border-[#334155] z-50 flex flex-col shadow-2xl">
             <div className="flex items-center justify-between px-4 py-3 border-b border-[#334155] flex-shrink-0">
-              <h3 className="text-sm font-semibold text-[#F1F5F9]">Configurações</h3>
+              <h3 id="room-settings-title" className="text-sm font-semibold text-[#F1F5F9]">Configurações</h3>
               <button
+                type="button"
+                aria-label="Fechar configurações"
                 onClick={() => setShowSettings(false)}
                 className="w-7 h-7 flex items-center justify-center rounded-lg text-[#64748B] hover:bg-[#334155] transition-colors border-none bg-transparent cursor-pointer"
               >
@@ -794,19 +800,27 @@ export default function RoomCamera() {
                   {cameras.map(cam => (
                     <div
                       key={cam.id}
-                      onClick={() => { setActiveCamId(cam.id); setStreamOk(false); }}
-                      className={`flex items-center gap-2 p-2.5 rounded-lg cursor-pointer transition-colors ${cam.id === activeCameraId ? 'bg-[#4A90D9]/20 border border-[#4A90D9]/40' : 'bg-[#334155] hover:bg-[#3D4F68]'}`}
+                      className={`flex items-center gap-2 p-2.5 rounded-lg transition-colors ${cam.id === activeCameraId ? 'bg-[#4A90D9]/20 border border-[#4A90D9]/40' : 'bg-[#334155] hover:bg-[#3D4F68]'}`}
                     >
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cam.id === activeCameraId ? 'bg-[#4A90D9]' : 'bg-[#475569]'}`} />
-                      <span className="text-xs text-[#F1F5F9] truncate flex-1">{cam.name}</span>
-                      <div className="flex gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => { setEditingCam(cam); setShowForm(true); }}
+                      {/* Selecionar a câmera é um botão: funciona com Enter/Espaço (#16). */}
+                      <button
+                        type="button"
+                        aria-pressed={cam.id === activeCameraId}
+                        aria-label={`Usar câmera ${cam.name}`}
+                        onClick={() => { setActiveCamId(cam.id); setStreamOk(false); }}
+                        className="flex items-center gap-2 flex-1 min-w-0 text-left bg-transparent border-none p-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
+                      >
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cam.id === activeCameraId ? 'bg-[#4A90D9]' : 'bg-[#475569]'}`} />
+                        <span className="text-xs text-[#F1F5F9] truncate flex-1">{cam.name}</span>
+                      </button>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <button type="button" aria-label={`Editar câmera ${cam.name}`} onClick={() => { setEditingCam(cam); setShowForm(true); }}
                           className="w-6 h-6 flex items-center justify-center rounded text-[#64748B] hover:text-[#94A3B8] hover:bg-[#475569] transition-colors border-none bg-transparent cursor-pointer">
                           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z" />
                           </svg>
                         </button>
-                        <button onClick={() => handleDeleteCam(cam.id)}
+                        <button type="button" aria-label={`Remover câmera ${cam.name}`} onClick={() => handleDeleteCam(cam.id)}
                           className="w-6 h-6 flex items-center justify-center rounded text-red-500/60 hover:text-red-400 hover:bg-[#475569] transition-colors border-none bg-transparent cursor-pointer">
                           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m2 0a1 1 0 00-1-1h-4a1 1 0 00-1 1m6 0H7" />
@@ -824,7 +838,7 @@ export default function RoomCamera() {
 
               <p className="text-[#334155] text-xs">Frames processados no servidor — detecção anônima por padrão.</p>
             </div>
-          </div>
+          </Dialog>
         )}
       </div>
 
