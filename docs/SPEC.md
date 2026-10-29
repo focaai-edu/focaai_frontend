@@ -109,6 +109,8 @@ O relatório do professor segue a mesma regra de duração, prévia e recarga do
 
 **RF28 — Diálogos e teclado.** Todo modal e gaveta (Nova/Editar Aula, configurações e câmera do `/room`, resumo da revisão, "Encerrar a aula também?") usa o componente `Dialog`: `role="dialog"`, `aria-modal="true"` e `aria-labelledby` no título; ao abrir, o foco entra no diálogo; Tab e Shift+Tab ficam presos dentro dele; Escape fecha (no diálogo de saída, Escape = "Continuar na aula"); ao fechar, o foco volta para quem abriu, inclusive num diálogo aberto por cima de outro. Botões só com ícone têm `aria-label` ("Fechar janela", "Editar aula <título>", "Excluir aula <título>", "Configurações", "Fechar configurações", "Editar/Remover câmera <nome>", "Fechar resumo"). Na revisão, cada distração da lista e cada trecho desatento da linha do tempo é um `<button>` com foco visível (`focus-visible:ring-primary`), que abre o resumo com Enter ou Espaço; a câmera da lista do `/room` também é um botão (`aria-pressed`). A gaveta do menu no celular (#12) fecha com Escape e devolve o foco ao botão de menu (#16).
 
+**RF29 — Excluir aula.** No painel do professor, aulas agendadas e encerradas têm a lixeira "Excluir aula <título>" (aulas ao vivo não: o backend recusa, RN04). Ela abre o `Dialog` (RF28) com "Cancelar" e "Excluir aula" (token `danger`). Para encerrada: `Tem certeza que deseja excluir a aula "<título>"? A transcrição, os eventos de atenção e os resumos dessa aula serão removidos permanentemente. Esta ação não pode ser desfeita.`; para agendada, sem a frase do meio. Confirmar envia `DELETE /api/classes/:id` (sessão do professor) e mostra "Excluindo…" até a resposta. Sucesso: o card sai da lista sem recarregar, o contador da aba diminui e aparece "Aula excluída com sucesso." (`role="status"`). Erro: o card fica, o diálogo fecha e aparece "Não foi possível excluir a aula. Tente novamente." (`role="alert"`). Cancelar ou Escape não enviam nada (#20).
+
 **RF17 — Datas.** As datas vêm da API em UTC com `Z` (RN24) e são exibidas no horário local do navegador, em `pt-BR`.
 
 ### 2.5 Processamento
@@ -149,6 +151,7 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 | RF26 | ✅ | — | — |
 | RF27 | ✅ | — | — |
 | RF28 | ✅ | — | — |
+| RF29 | ✅ | — | — |
 
 Cobertura por testes:
 - Camada 1, unidade (#2, #8), em `src/lib/attentionAlgo.test.js`: RF01 (identidade e rotações conhecidas, que fixam o sinal), RF02 (EAR, landmark ausente, largura zero), RF03 e RF04 (por modo), além da paridade entre o worker e `attentionAlgo.js`.
@@ -158,6 +161,7 @@ Cobertura por testes:
 - RF13, RF16 e RF27 (#5): `components/SummaryText.test.jsx`, `components/AttentionTimeline.test.jsx`, `components/TranscriptPanel.test.jsx`, `pages/student/ClassReview.test.jsx`, `pages/student/ClassLive.test.jsx`, `pages/student/Dashboard.test.jsx`, `pages/teacher/ClassReport.summaries.test.jsx`, `pages/teacher/Dashboard.test.jsx` e `lib/duration.test.js`.
 - RF28 (#16): `components/Dialog.test.jsx` e, por papel e teclado (user-event), `pages/teacher/Dashboard.a11y.test.jsx`, `pages/student/ClassReview.a11y.test.jsx` e `pages/room/RoomCamera.a11y.test.jsx`.
 - Limpeza (#35): `tests/cleanup.test.js` (arquivos e dependências mortas, rótulos numa fonte só, worker sem limiares e lintado) e `hooks/useLatestRequest.test.js` (resposta antiga não sobrescreve a nova em `/room-test`).
+- RF29 (#20): `pages/teacher/Dashboard.delete.test.jsx`.
 - Relatório do professor (#14, em `src/pages/teacher/ClassReport.test.jsx`): calibração do gráfico de atenção da turma (`AreaChart`) com domínio fixo `[0, 100]`, marcações `[0, 25, 50, 75, 100]`, formatação percentual sem repetição e margem esquerda `>= 0` prevenindo corte dos dígitos.
 - Layout responsivo (#12, em `src/components/Layout.test.jsx`): colapso da sidebar no mobile (< 768px) como gaveta com backdrop, botão de menu com `aria-expanded`, fechamento por clique externo, tecla Escape e navegação por link, com margem responsiva (`ml-0 md:ml-[240px]`) e eliminação de transbordamento horizontal.
 - Telas de aula ao vivo no mobile (#13, em `src/pages/ClassLiveResponsive.test.jsx`): layout empilhado (`flex-col md:flex-row`) no aluno com câmera e monitor em largura total sem esmagamento e transcrição empilhada abaixo (`w-full md:w-[300px]`); no professor, seletor de modos sem truncamento (`overflow-x-auto flex-nowrap`) e empilhamento da grade de alunos e transcrição eliminando divisão de 170px.
