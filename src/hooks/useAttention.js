@@ -22,7 +22,7 @@ const STABLE_MS = 1000;       // tempo que um novo status precisa se manter p/ v
 const NO_FACE_MS = 8000;      // tempo sem rosto até marcar `no_camera`
 const HIDDEN_MS = 1000;       // aba oculta por mais que isso conta como `distracted`
 
-export function useAttention(classId, studentId, monitoringMode = 'full_attention', source = 'webcam') {
+export function useAttention(classId, monitoringMode = 'full_attention', source = 'webcam') {
   const [status, setStatus] = useState('disconnected');
   const [earValue, setEarValue] = useState(1.0);
   const [poseValues, setPoseValues] = useState({ yaw: 0, pitch: 0, roll: 0 });
@@ -30,7 +30,7 @@ export function useAttention(classId, studentId, monitoringMode = 'full_attentio
   // Parâmetros do render mais recente: callbacks, timers e listeners leem daqui,
   // então nunca decidem com um modo antigo (#8, F01).
   const params = useRef(null);
-  params.current = { classId, studentId, monitoringMode, source };
+  params.current = { classId, monitoringMode, source };
 
   const currentStatus = useRef(null);     // status confirmado (exibido + persistido)
   const confirmedPose = useRef(null);     // ângulos/EAR do frame que confirmou o status
@@ -43,8 +43,8 @@ export function useAttention(classId, studentId, monitoringMode = 'full_attentio
     if (!socket.connected) return;
     const p = params.current;
     socket.emit('attention_update', {
+      // Sem student_id: o servidor identifica o aluno pela sessão (backend#7, #24).
       class_id: p.classId,
-      student_id: p.studentId,
       status: newStatus,
       source: p.source,
       monitoring_mode: p.monitoringMode,

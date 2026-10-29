@@ -17,7 +17,7 @@ import AttentionMonitor from './AttentionMonitor';
 let env;
 
 async function mount(props = {}) {
-  const utils = render(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" {...props} />);
+  const utils = render(<AttentionMonitor classId={7} monitoringMode="full_attention" {...props} />);
   await flush();
   const w = lastWorker();
   w.send({ type: 'ready' });
@@ -109,12 +109,26 @@ describe('AttentionMonitor — sequência de attention_update (#8, camada 2)', (
     });
     expect(second).toMatchObject({ class_id: 7, status: 'no_camera', source: 'webcam', monitoring_mode: 'full_attention' });
     for (const k of ['yaw', 'pitch', 'roll', 'ear']) expect(second).not.toHaveProperty(k);
+    // #24: a identidade vem da sessão no servidor (backend#7); o payload não leva student_id.
+    expect(first).not.toHaveProperty('student_id');
+    expect(second).not.toHaveProperty('student_id');
+  });
+
+  it('#24 CA1: reemissão (troca de modo e reconexão) também sai sem student_id', async () => {
+    const { w, rerender } = await mount();
+    pose(w);
+    rerender(<AttentionMonitor classId={7} monitoringMode="activity" />);
+    socket.current.trigger('connect');
+    await flush();
+    const ups = updates(socket.current);
+    expect(ups).toHaveLength(3);
+    for (const u of ups) expect(u).not.toHaveProperty('student_id');
   });
 
   it('CA19/CA1 (F01): depois de mudar para exam, cabeça para baixo não emite distracted', async () => {
     const { w, rerender } = await mount();
     pose(w);
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="exam" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="exam" />);
     pose(w, { pitch: -30 });
     advance(2000, () => pose(w, { pitch: -30 }));
     // O segundo attentive é a reemissão da troca de modo (RF09, #3), não um distracted.
@@ -137,7 +151,7 @@ describe('AttentionMonitor — sequência de attention_update (#8, camada 2)', (
   it('CA1 (F01): depois de mudar para activity, o attention_update carrega o modo novo', async () => {
     const { w, rerender } = await mount();
     pose(w);
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="activity" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="activity" />);
     // Em activity, olhar para baixo é permitido; virar o rosto continua desatento.
     pose(w, { pitch: -40 });
     advance(1500, () => pose(w, { pitch: -40 }));
@@ -158,7 +172,7 @@ describe('AttentionMonitor — sequência de attention_update (#8, camada 2)', (
   it('CA2 (F01): ao entrar em break, um aluno atento não vira distracted', async () => {
     const { w, rerender } = await mount();
     pose(w);
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="break" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="break" />);
     advance(5000, () => pose(w, { yaw: 60 }));
     expect(emitted(socket.current)).toEqual([['attention_update', 'attentive']]);
   });
@@ -166,9 +180,9 @@ describe('AttentionMonitor — sequência de attention_update (#8, camada 2)', (
   it('CA7 (F14): depois de um break sem rosto, no_camera só sai 8 s após a saída do break', async () => {
     const { w, rerender } = await mount();
     pose(w);
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="break" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="break" />);
     advance(600000, () => noFace(w), 1000); // 10 min de intervalo sem rosto
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="full_attention" />);
     let at = null;
     noFace(w);
     advance(9000, (t) => {
@@ -183,7 +197,7 @@ describe('AttentionMonitor — sequência de attention_update (#8, camada 2)', (
   });
 
   it('CA7 (F14): detector que demora 12 s para carregar — a contagem começa no 1º frame', async () => {
-    render(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    render(<AttentionMonitor classId={7} monitoringMode="full_attention" />);
     await flush();
     advance(12000);
     const w = lastWorker();
@@ -238,7 +252,7 @@ describe('AttentionMonitor — sequência de attention_update (#8, camada 2)', (
   it('CA4/CA22 (F02): em break, a aba oculta não emite nada', async () => {
     const { w, rerender } = await mount();
     pose(w);
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="break" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="break" />);
     changeVisibility('hidden');
     advance(1500);
     changeVisibility('visible');
@@ -269,7 +283,7 @@ describe('AttentionMonitor — câmera indisponível (#8 CA5/CA6)', () => {
     env.getUserMedia.mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'NotAllowedError' }));
     const { rerender } = await mount({ monitoringMode: 'break' });
     expect(emitted(socket.current)).toEqual([]);
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="full_attention" />);
     expect(emitted(socket.current)).toEqual([['attention_update', 'no_camera']]);
   });
 });
@@ -280,7 +294,7 @@ describe('AttentionMonitor — falha do detector (#8 CA8/CA9/CA23)', () => {
   beforeEach(() => { vi.spyOn(console, 'warn').mockImplementation(() => {}); });
 
   async function mountWithInitError() {
-    const utils = render(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    const utils = render(<AttentionMonitor classId={7} monitoringMode="full_attention" />);
     await flush();
     const w = lastWorker();
     w.send({ type: 'error', message: 'Failed to load MediaPipe: network' });
@@ -321,7 +335,7 @@ describe('AttentionMonitor — reemissão na troca de modo (#3, RF09; #8 CA20)',
   it('CA1/CA20: attentive em full_attention, troca para activity reemite attentive com o modo novo', async () => {
     const { w, rerender } = await mount();
     pose(w);
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="activity" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="activity" />);
     expect(emitted(socket.current)).toEqual([['attention_update', 'attentive'], ['attention_update', 'attentive']]);
     expect(updates(socket.current)[1].monitoring_mode).toBe('activity');
   });
@@ -331,7 +345,7 @@ describe('AttentionMonitor — reemissão na troca de modo (#3, RF09; #8 CA20)',
     pose(w);
     pose(w, { yaw: 40 });
     advance(1100, () => pose(w, { yaw: 40 }));
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="exam" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="exam" />);
     expect(emitted(socket.current)).toEqual([
       ['attention_update', 'attentive'], ['attention_update', 'distracted'], ['attention_update', 'distracted'],
     ]);
@@ -341,7 +355,7 @@ describe('AttentionMonitor — reemissão na troca de modo (#3, RF09; #8 CA20)',
   it('CA1: no_camera confirmado é reemitido na troca de modo, sem ângulos', async () => {
     env.getUserMedia.mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'NotAllowedError' }));
     const { rerender } = await mount();
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="activity" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="activity" />);
     expect(emitted(socket.current)).toEqual([['attention_update', 'no_camera'], ['attention_update', 'no_camera']]);
     expect(updates(socket.current)[1]).not.toHaveProperty('yaw');
   });
@@ -349,10 +363,10 @@ describe('AttentionMonitor — reemissão na troca de modo (#3, RF09; #8 CA20)',
   it('CA2/CA20: entrar em break não emite; sair de break emite o status uma vez', async () => {
     const { w, rerender } = await mount();
     pose(w);
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="break" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="break" />);
     advance(3000, () => pose(w));
     expect(emitted(socket.current)).toEqual([['attention_update', 'attentive']]);
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="full_attention" />);
     advance(500, () => pose(w));
     expect(emitted(socket.current)).toEqual([['attention_update', 'attentive'], ['attention_update', 'attentive']]);
     expect(updates(socket.current)[1].monitoring_mode).toBe('full_attention');
@@ -361,7 +375,7 @@ describe('AttentionMonitor — reemissão na troca de modo (#3, RF09; #8 CA20)',
   it('CA2: mesmo modo de novo (rerender sem troca) não reemite', async () => {
     const { w, rerender } = await mount();
     pose(w);
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="full_attention" />);
     expect(emitted(socket.current)).toEqual([['attention_update', 'attentive']]);
   });
 
@@ -370,10 +384,10 @@ describe('AttentionMonitor — reemissão na troca de modo (#3, RF09; #8 CA20)',
     pose(w);
     pose(w, { yaw: 40 });
     advance(1100, () => pose(w, { yaw: 40 }));
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="break" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="break" />);
     advance(3000, () => pose(w));
     expect(emitted(socket.current)).toEqual([['attention_update', 'attentive'], ['attention_update', 'distracted']]);
-    rerender(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    rerender(<AttentionMonitor classId={7} monitoringMode="full_attention" />);
     expect(emitted(socket.current)).toEqual([
       ['attention_update', 'attentive'], ['attention_update', 'distracted'], ['attention_update', 'distracted'],
     ]);
@@ -384,7 +398,7 @@ describe('AttentionMonitor — permissão concedida depois de sair (#4 CA10, F11
   it('a track da webcam é parada assim que a permissão chega', async () => {
     let grant;
     env.getUserMedia.mockReturnValue(new Promise((resolve) => { grant = resolve; }));
-    const { unmount } = render(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    const { unmount } = render(<AttentionMonitor classId={7} monitoringMode="full_attention" />);
     await flush();
     unmount();
     await act(async () => { grant(env.stream); });
@@ -393,7 +407,7 @@ describe('AttentionMonitor — permissão concedida depois de sair (#4 CA10, F11
 
   it('play() interrompido (AbortError) também para a track daquela tentativa', async () => {
     HTMLMediaElement.prototype.play.mockRejectedValueOnce(Object.assign(new Error('interrompido'), { name: 'AbortError' }));
-    render(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    render(<AttentionMonitor classId={7} monitoringMode="full_attention" />);
     await flush();
     expect(env.stream.track.stop).toHaveBeenCalled();
   });

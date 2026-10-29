@@ -157,7 +157,6 @@ export default function StudentClassLive() {
         <div className="w-full md:flex-1 flex flex-col items-center justify-center p-4 md:p-6 gap-3 overflow-y-visible md:overflow-y-auto flex-shrink-0 md:flex-shrink">
           <AttentionMonitor
             classId={classId}
-            studentId={user.id}
             monitoringMode={mode}
           />
         </div>
