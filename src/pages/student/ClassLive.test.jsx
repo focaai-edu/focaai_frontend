@@ -141,3 +141,18 @@ describe('Aula ao vivo do aluno — reconexão (#3 CA3; #8 CA21)', () => {
     expect(screen.getByText('Tela de revisão')).toBeTruthy();
   });
 });
+
+describe('Aula ao vivo do aluno — contrato de identidade (#7 CA6)', () => {
+  it('join_class leva só class_id; attention_update leva class_id, status, source e o student_id da sessão', async () => {
+    const w = (await renderLive(), lastWorker());
+    w.send({ type: 'ready' });
+    pose(w);
+    const calls = socket.current.emit.mock.calls;
+    const join = calls.find(([ev]) => ev === 'join_class')[1];
+    const update = calls.find(([ev]) => ev === 'attention_update')[1];
+    expect(join).toEqual({ class_id: 7 });
+    expect(update).toMatchObject({ class_id: 7, status: 'attentive', source: 'webcam' });
+    // Compatibilidade até focaai_backend#7: o mesmo id do usuário autenticado (useAuth).
+    expect(update.student_id).toBe(3);
+  });
+});

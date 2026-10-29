@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import Layout from '../../components/Layout';
 import api from '../../services/api';
-import socket from '../../services/socket';
 
 export default function StudentDashboard() {
   const navigate = useNavigate();
@@ -25,7 +24,6 @@ export default function StudentDashboard() {
   }, []);
 
   useEffect(() => { fetchClasses(); }, [fetchClasses]);
-  useEffect(() => { socket.connect(); return () => {}; }, []);
 
   if (loading) {
     return <Layout role="student"><p className="text-gray-500 dark:text-[#64748B]">Carregando...</p></Layout>;

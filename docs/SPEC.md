@@ -69,6 +69,8 @@ Sem matriz (ausente ou com menos de 16 valores), a pose é `0, 0, 0`.
 
 **RF21 — Erros do servidor.** Todo `error { message }` do servidor (enviado só ao remetente) aparece por 6 s num aviso não bloqueante (`role="alert"`), em qualquer tela, sem trocar de tela. Sem `message`, o aviso diz "Ocorreu um erro no servidor." Um erro novo substitui o anterior e reinicia o prazo (#3).
 
+**RF22 — Socket e sessão.** O socket só conecta com um usuário autenticado (login, cadastro ou `/api/auth/me` com usuário) e é desconectado no logout (antes da chamada ao servidor, mesmo se ela falhar), quando `/api/auth/me` não traz usuário e quando o usuário da sessão muda. O servidor guarda o usuário da conexão no handshake, então trocar de conta na mesma aba sempre abre uma conexão nova. Quem controla o ciclo é o `AuthContext`; as páginas não abrem a conexão por conta própria. O `attention_update` continua mandando `student_id` (= `user.id` da sessão) só por compatibilidade com o backend atual; nenhuma decisão do frontend depende dele, e a identidade vem da sessão (focaai-edu/focaai_backend#7) (#7).
+
 **RF11 — Entrar e sair (aluno).** A tela `/student/classes/:id/live` só abre para aula `live`; caso contrário, volta ao painel. Ao abrir, emite `join_class`. Ao sair (botão "Sair" ou ao deixar a página), emite `leave_class`. Ao receber `class_ended`, vai para a revisão (`/student/classes/:id/review`).
 
 **RF12 — Transcrição ao vivo.** Aluno e professor veem cada `new_transcription` da aula em ordem de chegada, com o horário local, com rolagem automática para o fim.
@@ -125,11 +127,12 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 | RF19 | ✅ | — | — |
 | RF20 | ✅ | — | — |
 | RF21 | ✅ | — | — |
+| RF22 | ✅ | — | — |
 
 Cobertura por testes:
 - Camada 1, unidade (#2, #8), em `src/lib/attentionAlgo.test.js`: RF01 (identidade e rotações conhecidas, que fixam o sinal), RF02 (EAR, landmark ausente, largura zero), RF03 e RF04 (por modo), além da paridade entre o worker e `attentionAlgo.js`.
 - Camada 2, integração (#8), em `src/components/AttentionMonitor.test.jsx` e `src/pages/student/ClassLive.test.jsx`, com worker, socket e câmera falsos (`src/test/attentionHarness.js`) e timers falsos: sequência exata de `attention_update` para RF05–RF08, RF18 (troca de modo e falha do detector), RF19 e RF20.
-- RF09, RF10 e RF21 (#3): reemissão na troca de modo em `AttentionMonitor.test.jsx`; reconexão do aluno (inclusive aula encerrada durante a queda) em `pages/student/ClassLive.test.jsx`; do professor em `pages/teacher/ClassLive.test.jsx`; aviso de erro em `components/ServerErrorAlert.test.jsx`. As demais regras ainda não têm teste.
+- RF09, RF10 e RF21 (#3): reemissão na troca de modo em `AttentionMonitor.test.jsx`; reconexão do aluno (inclusive aula encerrada durante a queda) em `pages/student/ClassLive.test.jsx`; do professor em `pages/teacher/ClassLive.test.jsx`; aviso de erro em `components/ServerErrorAlert.test.jsx`. RF22 (#7): ciclo do socket com a sessão em `context/AuthContext.test.jsx` e contrato de identidade em `pages/student/ClassLive.test.jsx`. As demais regras ainda não têm teste.
 
 ## 4. Fora do fluxo central (experimental)
 
