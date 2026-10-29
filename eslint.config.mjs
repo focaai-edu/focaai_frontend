@@ -23,4 +23,9 @@ export default [
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
+  {
+    // Testes rodam no Node (Vitest): podem usar process, fs etc.
+    files: ['**/*.test.{js,jsx}', 'src/test/**/*.js'],
+    languageOptions: { globals: { ...globals.node } },
+  },
 ];

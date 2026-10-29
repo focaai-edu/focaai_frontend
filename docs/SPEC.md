@@ -47,13 +47,17 @@ Sem matriz (ausente ou com menos de 16 valores), a pose é `0, 0, 0`.
 
 **RF04 — Decisão por frame.** Um frame é **desatento** se qualquer condição do modo ativo for violada: `|yaw| > yaw`; `pitch > pitch_up`; `pitch < −pitch_down` (quando o modo não permite olhar para baixo); ou `EAR < ear`. Caso contrário, é **atento**.
 
-**RF05 — Intervalo.** Em `break`, todo frame conta como atento, a ausência de rosto é ignorada e nada é emitido (RF09).
+**RF05 — Intervalo.** Em `break`, nenhum status é confirmado: frames desatentos, ausência de rosto e aba oculta são ignorados, e nada é emitido (RF09). O tempo do intervalo não conta para RF07 (#8).
 
 ### 2.2 Estabilização e emissão
 
 **RF06 — Estabilização.** A primeira classificação da sessão é confirmada imediatamente. A partir daí, um status novo só é confirmado depois de se manter por **1 s** seguido (`STABLE_MS`). Oscilações perto do limiar não viram eventos.
 
-**RF07 — Ausência de rosto.** Sem rosto detectado por **8 s** seguidos (`NO_FACE_SECONDS`), o status vira `no_camera` imediatamente, sem estabilização. Qualquer frame com rosto zera a contagem.
+**RF07 — Ausência de rosto.** Sem rosto detectado por **8 s** seguidos (`NO_FACE_MS`), o status vira `no_camera` imediatamente, sem estabilização. A contagem começa no primeiro frame sem rosto processado fora do `break`; o tempo de carga do detector e o do intervalo não entram (#8). Qualquer frame com rosto zera a contagem.
+
+**RF19 — Aba oculta.** Com a aba oculta (`document.visibilityState === "hidden"`) por mais de **1 s** (`HIDDEN_MS`), fora do `break`, o status vira `distracted` imediatamente (o navegador para de entregar frames, e o status congelaria). Frames que chegam com a aba oculta são ignorados. Ao voltar, a decisão recomeça pelos frames, com a estabilização de RF06. Com o status em `no_camera`, a aba oculta não o muda (#8).
+
+**RF20 — Câmera indisponível.** Se a câmera é negada ou não existe (`getUserMedia` falha) ou a track de vídeo termina (webcam desconectada), o status vira `no_camera` imediatamente, sem esperar RF07, e a tela mostra "Não foi possível acessar a câmera. Seu professor verá você como sem câmera." Só é emitido `attention_update { status: "no_camera" }`; `camera_disabled` não é usado. Em `break`, a marcação espera o fim do intervalo (#8).
 
 **RF08 — Emissão.** `attention_update` é emitido quando um status é confirmado e é diferente do anterior (RF06/RF07), e sempre que RF09 ou RF10 pedirem, desde que o socket esteja conectado. O payload segue o contrato do backend (RN12): `class_id`, `status`, `source` e os ângulos e EAR do frame que confirmou o status.
 
@@ -90,7 +94,7 @@ Distração sem resumo:
 
 ### 2.5 Processamento
 
-**RF18 — Pipeline no navegador.** O MediaPipe Face Landmarker (`@mediapipe/tasks-vision` 0.10.18, via CDN, delegate CPU, modo VIDEO, 1 rosto) roda num **Web Worker** (`public/attention-worker.js`) para não travar a interface. O próximo frame só é enviado ao worker quando o anterior termina (backpressure). O worker devolve pose, EAR e landmarks; a decisão (RF04–RF07) roda no hook `useAttention`.
+**RF18 — Pipeline no navegador.** O MediaPipe Face Landmarker (`@mediapipe/tasks-vision` 0.10.18, via CDN, delegate CPU, modo VIDEO, 1 rosto) roda num **Web Worker** (`public/attention-worker.js`) para não travar a interface. O próximo frame só é enviado ao worker quando o anterior termina (backpressure). O worker devolve pose, EAR e landmarks; a decisão (RF04–RF07) roda no hook `useAttention`, sempre com o modo atual da aula. Um `error` do worker **antes** do `ready` é falha de inicialização (CDN ou modelo indisponível): a tela troca "Carregando detector..." por "Não foi possível iniciar o detector de atenção." com o botão "Tentar de novo" (recria o worker) e o status vira `no_camera`. Um `error` **depois** do `ready` é erro de um frame: é ignorado e o próximo frame segue (#8).
 
 ## 3. Status de implementação
 
@@ -116,8 +120,13 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 | RF16 | ⚠️ | Distração sem resumo mostra "Sem resumo disponível." direto, sem estado "gerando" | #5 |
 | RF17 | ⚠️ | Correto no frontend, mas horários de eventos e resumos aparecem 3 h adiantados porque o backend envia sem `Z` | backend#8 |
 | RF18 | ✅ | — | — |
+| RF19 | ✅ | — | — |
+| RF20 | ✅ | — | — |
 
-Cobertura por testes (#2): RF01 (`computeHeadPose`), RF03 e RF04 (`isDistracted`, por modo), em `src/lib/attentionAlgo.test.js`. As demais regras ainda não têm teste.
+Cobertura por testes:
+- Camada 1, unidade (#2, #8), em `src/lib/attentionAlgo.test.js`: RF01 (identidade e rotações conhecidas, que fixam o sinal), RF02 (EAR, landmark ausente, largura zero), RF03 e RF04 (por modo), além da paridade entre o worker e `attentionAlgo.js`.
+- Camada 2, integração (#8), em `src/components/AttentionMonitor.test.jsx` e `src/pages/student/ClassLive.test.jsx`, com worker, socket e câmera falsos (`src/test/attentionHarness.js`) e timers falsos: sequência exata de `attention_update` para RF05–RF08, RF18 (troca de modo e falha do detector), RF19 e RF20.
+- RF09 e RF10 ganham teste com #3. As demais regras ainda não têm teste.
 
 ## 4. Fora do fluxo central (experimental)
 
