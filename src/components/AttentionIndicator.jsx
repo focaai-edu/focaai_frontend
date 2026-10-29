@@ -1,12 +1,15 @@
-const STATUS_CONFIG = {
-  attentive: { color: '#22C55E', label: 'Atento' },
-  distracted: { color: '#4A90D9', label: 'Desatento' },
-  no_camera: { color: '#F59E0B', label: 'Sem câmera' },
-  disconnected: { color: '#9CA3AF', label: 'Desconectado' },
+import { STATUS_LABELS } from '../lib/labels';
+
+const STATUS_COLORS = {
+  attentive: '#22C55E',
+  distracted: '#4A90D9',
+  no_camera: '#F59E0B',
+  disconnected: '#9CA3AF',
 };
 
 export default function AttentionIndicator({ status = 'disconnected', showLabel = true, size = 12 }) {
-  const config = STATUS_CONFIG[status] || STATUS_CONFIG.disconnected;
+  const key = STATUS_COLORS[status] ? status : 'disconnected';
+  const config = { color: STATUS_COLORS[key], label: STATUS_LABELS[key] };
 
   return (
     <div className="inline-flex items-center gap-1.5 opacity-90" title={config.label}>

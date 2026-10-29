@@ -114,7 +114,7 @@ describe('Responsividade das telas de aula ao vivo no mobile (#13 / V02 / V20)',
     it('CA3: a barra de modos de monitoramento usa overflow-x-auto e flex-nowrap para não truncar botões', async () => {
       await renderTeacherLive();
 
-      const btnFull = screen.getByRole('button', { name: 'Atenção Total' });
+      const btnFull = screen.getByRole('button', { name: 'Atenção total' });
       const modeBar = btnFull.parentElement;
 
       expect(modeBar).toBeTruthy();

@@ -15,12 +15,8 @@ export const MODE_THRESHOLDS = {
   break:          null,
 };
 
-export const MODE_LABELS = {
-  full_attention: 'Atenção total',
-  activity: 'Atividade',
-  exam: 'Prova',
-  break: 'Intervalo',
-};
+// Rótulos dos modos: fonte única em lib/labels.js (#35).
+export { MODE_LABELS } from './labels';
 
 // Deriva yaw/pitch/roll (graus) da matriz de transformação facial do MediaPipe.
 export function computeHeadPose(m) {

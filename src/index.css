@@ -117,9 +117,3 @@ button, a, [role="button"], input[type="submit"] {
     outline: 3px solid Highlight;
   }
 }
-
-/* Reduce transparency for readability */
-.card, .sidebar {
-  background-color: #FFFFFF;
-  border: 1px solid #E2E8F0;
-}

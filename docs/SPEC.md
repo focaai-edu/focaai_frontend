@@ -36,7 +36,7 @@ Sem matriz (ausente ou com menos de 16 valores), a pose é `0, 0, 0`.
 
 **RF02 — Abertura dos olhos (EAR).** EAR é a média dos dois olhos, calculada sobre os landmarks 33, 160, 158, 133, 153, 144 (esquerdo) e 362, 385, 387, 263, 373, 380 (direito): `(|p1−p5| + |p2−p4|) / (2·|p0−p3|)`. Um landmark ausente, ou largura zero, conta como olho aberto (`1.0`).
 
-**RF03 — Limiares por modo.** Fonte única: `src/lib/attentionAlgo.js` (`MODE_THRESHOLDS`).
+**RF03 — Limiares por modo.** Fonte única: `src/lib/attentionAlgo.js` (`MODE_THRESHOLDS`); o worker não tem limiares (#35). Os rótulos dos modos e dos status exibidos em qualquer tela vêm de `src/lib/labels.js` (`MODE_LABELS`, `STATUS_LABELS`: "Atenção total", "Desatento", "Fora da aula"…) (#35).
 
 | Modo | \|yaw\| máx. | pitch p/ cima máx. | pitch p/ baixo máx. | EAR mín. |
 |---|---|---|---|---|
@@ -123,7 +123,7 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 |---|---|---|---|
 | RF01 | ✅ | — | — |
 | RF02 | ✅ | — | — |
-| RF03 | ✅ | O worker tem uma cópia antiga de limiares, não usada na decisão (a decisão usa `attentionAlgo.js`) | — |
+| RF03 | ✅ | — | — |
 | RF04 | ✅ | — | — |
 | RF05 | ✅ | — | — |
 | RF06 | ✅ | — | — |
@@ -157,6 +157,7 @@ Cobertura por testes:
 - RF14 (#4): gravação em `hooks/useAudioChunks.test.js` (duração com timers falsos, descarte ≤ 500 bytes, offline, último trecho, permissão tardia) e nas telas (`pages/teacher/ClassLive.test.jsx`, `pages/room/RoomCamera.test.jsx`); gravação única em `tests/single-audio-recorder.test.js`; webcam com permissão tardia em `components/AttentionMonitor.test.jsx`.
 - RF13, RF16 e RF27 (#5): `components/SummaryText.test.jsx`, `components/AttentionTimeline.test.jsx`, `components/TranscriptPanel.test.jsx`, `pages/student/ClassReview.test.jsx`, `pages/student/ClassLive.test.jsx`, `pages/student/Dashboard.test.jsx`, `pages/teacher/ClassReport.summaries.test.jsx`, `pages/teacher/Dashboard.test.jsx` e `lib/duration.test.js`.
 - RF28 (#16): `components/Dialog.test.jsx` e, por papel e teclado (user-event), `pages/teacher/Dashboard.a11y.test.jsx`, `pages/student/ClassReview.a11y.test.jsx` e `pages/room/RoomCamera.a11y.test.jsx`.
+- Limpeza (#35): `tests/cleanup.test.js` (arquivos e dependências mortas, rótulos numa fonte só, worker sem limiares e lintado) e `hooks/useLatestRequest.test.js` (resposta antiga não sobrescreve a nova em `/room-test`).
 - Relatório do professor (#14, em `src/pages/teacher/ClassReport.test.jsx`): calibração do gráfico de atenção da turma (`AreaChart`) com domínio fixo `[0, 100]`, marcações `[0, 25, 50, 75, 100]`, formatação percentual sem repetição e margem esquerda `>= 0` prevenindo corte dos dígitos.
 - Layout responsivo (#12, em `src/components/Layout.test.jsx`): colapso da sidebar no mobile (< 768px) como gaveta com backdrop, botão de menu com `aria-expanded`, fechamento por clique externo, tecla Escape e navegação por link, com margem responsiva (`ml-0 md:ml-[240px]`) e eliminação de transbordamento horizontal.
 - Telas de aula ao vivo no mobile (#13, em `src/pages/ClassLiveResponsive.test.jsx`): layout empilhado (`flex-col md:flex-row`) no aluno com câmera e monitor em largura total sem esmagamento e transcrição empilhada abaixo (`w-full md:w-[300px]`); no professor, seletor de modos sem truncamento (`overflow-x-auto flex-nowrap`) e empilhamento da grade de alunos e transcrição eliminando divisão de 170px.
@@ -167,7 +168,7 @@ Sem regras fechadas; o comportamento atual é descrito só para referência.
 
 - **Câmera da sala (`/room`).** O professor escolhe a fonte: webcam do computador ou câmera IP MJPEG, via proxy do backend. As câmeras cadastradas ficam no `localStorage`. A cada 3 s, um frame JPEG é enviado por `room_frame`; o backend detecta os rostos (YuNet) e devolve caixas e o agregado atentos/desatentos, que são desenhados sobre o vídeo. A tela também grava o áudio da aula (RF14) e troca o modo (RF15). Ao receber `class_ended` da aula selecionada, fecha a sala (sem frames, sem microfone, câmera desligada), mostra "A aula foi encerrada." e recarrega as aulas ao vivo. Sair segue RF25 (#9).
 - **Teste com imagem estática (`/room-test`).** Envia uma imagem para `POST /api/room/analyze-frame`, com parâmetros ajustáveis (detecção, limiares, pose), para calibrar o algoritmo da câmera da sala. Os limiares da câmera da sala são do backend e hoje diferem de RF03.
-- `src/lib/faceDetection.js` (detecção em grade) e as funções de pose de `attentionAlgo.js` eram usadas pela versão da câmera da sala no navegador e ficaram como base para reuso.
+- As funções de pose e EAR de `attentionAlgo.js` têm uma cópia em `public/attention-worker.js`: o worker é clássico porque o carregador do MediaPipe 0.10.18 usa `importScripts`, que não existe em module worker (testado em #35). Um teste trava as duas cópias nos mesmos resultados (#8 CA13). A versão do MediaPipe fica numa constante única do worker (`TASKS_VISION`), carregada do CDN; o pacote npm não é usado (#35).
 - Pendente de decisão de produto: câmera anônima ou identificada; calibração de posição/altura da câmera; unificar os limiares com RF03.
 
 ## 5. Desenvolvimento
@@ -175,4 +176,4 @@ Sem regras fechadas; o comportamento atual é descrito só para referência.
 - Rodar: `npm run dev` (porta 5173; API e socket em `VITE_API_URL` / `VITE_SOCKET_URL`, padrão `http://localhost:5000`).
 - Verificações: `npm run lint`, `npm test` e `npm run build` (#2).
 - Testes: Vitest com `jsdom` e `@testing-library/react` (config em `vite.config.js`). `npm test` roda a suíte uma vez; `npm run test:watch` fica observando. Os testes ficam ao lado do código (`*.test.js` / `*.test.jsx`); `tests/` guarda testes do próprio ferramental (ex.: a config do ESLint).
-- Lint: `eslint src/` analisa `.js` e `.jsx` com globals do navegador, JSX e as regras de hooks do React (`rules-of-hooks` como erro, `exhaustive-deps` como warning). Erros reprovam; warnings são aceitos.
+- Lint: `eslint src/ public/` analisa `.js` e `.jsx` com globals do navegador, JSX e as regras de hooks do React (`rules-of-hooks` como erro, `exhaustive-deps` como warning). Erros reprovam; warnings são aceitos. O worker clássico de `public/` é analisado com os globals de Web Worker (#35).

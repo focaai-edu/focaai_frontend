@@ -24,8 +24,6 @@ const HIDDEN_MS = 1000;       // aba oculta por mais que isso conta como `distra
 
 export function useAttention(classId, monitoringMode = 'full_attention', source = 'webcam') {
   const [status, setStatus] = useState('disconnected');
-  const [earValue, setEarValue] = useState(1.0);
-  const [poseValues, setPoseValues] = useState({ yaw: 0, pitch: 0, roll: 0 });
 
   // Parâmetros do render mais recente: callbacks, timers e listeners leem daqui,
   // então nunca decidem com um modo antigo (#8, F01).
@@ -89,9 +87,6 @@ export function useAttention(classId, monitoringMode = 'full_attention', source 
   }, [confirm]);
 
   const processPose = useCallback((pose) => {
-    setPoseValues({ yaw: pose.yaw, pitch: pose.pitch, roll: pose.roll });
-    setEarValue(pose.ear);
-
     const mode = params.current.monitoringMode;
     // Intervalo: sem monitoramento — nada é confirmado nem emitido (RF05).
     // Aba oculta: o status fica no `distracted` da aba (#8, F02).
@@ -172,12 +167,9 @@ export function useAttention(classId, monitoringMode = 'full_attention', source 
 
   return {
     status,
-    earValue,
-    poseValues,
     processPose,
     processNoFace,
     resetNoFace,
     markNoCamera,
-    currentStatus: currentStatus.current,
   };
 }

@@ -1,11 +1,6 @@
-export default function StudentGrid({ students = [], monitoringMode = 'full_attention' }) {
-  const MODE_LABELS = {
-    full_attention: 'Atenção Total',
-    activity: 'Atividade',
-    exam: 'Prova',
-    break: 'Intervalo',
-  };
+import { MODE_LABELS, STATUS_LABELS } from '../lib/labels';
 
+export default function StudentGrid({ students = [], monitoringMode = 'full_attention' }) {
   const STATUS_COLORS = {
     attentive: '#22C55E',
     distracted: '#4A90D9',
@@ -53,11 +48,7 @@ export default function StudentGrid({ students = [], monitoringMode = 'full_atte
                 {student.student_name || `Aluno ${student.student_id}`}
               </p>
               <span className="text-xs font-semibold" style={{ color }}>
-                {status === 'connected' ? 'Conectado' :
-                 status === 'disconnected' ? 'Fora da aula' :
-                 status === 'attentive' ? 'Atento' :
-                 status === 'distracted' ? 'Desatento' :
-                 status === 'no_camera' ? 'Sem câmera' : status}
+                {STATUS_LABELS[status] || status}
               </span>
             </div>
           );
