@@ -391,7 +391,8 @@ export default function RoomCamera() {
       const att   = data.attentive   || 0;
       const dist  = data.distracted  || 0;
       const pct   = total > 0 ? Math.round(att / total * 100) : 0;
-      setAggregate(total > 0 ? { total, attentive: att, distracted: dist, pct } : null);
+      // Zero rostos também é resposta: null fica só para antes da primeira análise (#53).
+      setAggregate({ total, attentive: att, distracted: dist, pct });
     };
     socket.on('room_attention_update', onRoomAttention);
     return () => socket.off('room_attention_update', onRoomAttention);
@@ -701,6 +702,10 @@ export default function RoomCamera() {
                       <span className="inline-block w-2.5 h-2.5 rounded-full bg-white" />
                       Intervalo — detecção pausada
                     </div>
+                  ) : aggregate?.total === 0 ? (
+                    <div className="flex items-center gap-2 bg-black/60 text-gray-200 text-sm rounded-full px-4 py-1.5">
+                      Nenhum rosto detectado
+                    </div>
                   ) : aggregate ? (
                     <div className={`flex items-center gap-2 ${pctColor(aggregate.pct).bg} text-white font-semibold text-sm rounded-full px-4 py-1.5 shadow-sm`}>
                       <span className="inline-block w-2.5 h-2.5 rounded-full bg-white" />
@@ -793,7 +798,9 @@ export default function RoomCamera() {
               {/* Attention stats */}
               <div>
                 <p className="text-xs text-slate-500 mb-2 uppercase tracking-wide font-medium">Atenção da Turma</p>
-                {aggregate ? (
+                {aggregate?.total === 0 ? (
+                  <p className="text-slate-400 text-xs">Nenhum rosto detectado.</p>
+                ) : aggregate ? (
                   <div className="space-y-2">
                     <div className="p-3 rounded-lg bg-slate-700">
                       <p className={`text-2xl font-bold ${pctColor(aggregate.pct).text}`}>{aggregate.pct}%</p>
