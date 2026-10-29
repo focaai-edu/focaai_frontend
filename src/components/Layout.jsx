@@ -28,9 +28,9 @@ export default function Layout({ children, role = 'student' }) {
   }, [isMobileOpen, closeMenu]);
 
   return (
-    <div className="min-h-screen bg-[#F1F5F9] dark:bg-[#0F172A] flex flex-col md:flex-row">
+    <div className="min-h-screen bg-bg-light dark:bg-bg-dark flex flex-col md:flex-row">
       {/* Mobile Header */}
-      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-[#07122f] border-b border-white/10 text-white sticky top-0 z-30">
+      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-primary border-b border-white/10 text-white sticky top-0 z-30">
         <div className="flex items-center gap-3">
           <button
             ref={menuButtonRef}
@@ -38,18 +38,18 @@ export default function Layout({ children, role = 'student' }) {
             onClick={toggleMenu}
             aria-label="Abrir menu"
             aria-expanded={isMobileOpen}
-            className="p-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[#7DB8F0] cursor-pointer"
+            className="p-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-secondary cursor-pointer"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-white/15">
               <img src="/cerebro.png" alt="" className="w-4 h-4 brightness-0 invert" />
             </div>
             <span className="font-bold tracking-tight text-base text-white">
-              foca<span style={{ color: '#7DB8F0' }}>.</span>ai
+              foca<span className="text-secondary">.</span>ai
             </span>
           </div>
         </div>
@@ -69,7 +69,7 @@ export default function Layout({ children, role = 'student' }) {
       <Sidebar role={role} isOpen={isMobileOpen} onNavigate={closeMenu} />
 
       {/* Main Content */}
-      <main className="flex-1 ml-0 md:ml-[240px] p-4 md:p-8 text-gray-900 dark:text-[#F1F5F9] min-h-screen" role="main">
+      <main className="flex-1 ml-0 md:ml-[240px] p-4 md:p-8 text-slate-900 dark:text-text-primary-dark min-h-screen" role="main">
         {children}
       </main>
     </div>

@@ -31,7 +31,7 @@ export default function ServerErrorAlert() {
   return (
     <div
       role="alert"
-      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-[calc(100%-2rem)] px-4 py-3 rounded-lg bg-[#1B4F81] text-[#F1F5F9] text-sm shadow-sm"
+      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-[calc(100%-2rem)] px-4 py-3 rounded-lg bg-primary text-text-primary-dark border border-slate-700 text-sm shadow-sm"
     >
       {message}
     </div>

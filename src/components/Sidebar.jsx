@@ -2,7 +2,6 @@ import { useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
-import ParticleField from './ParticleField';
 
 const NAV_ITEMS = {
   teacher: [
@@ -62,16 +61,12 @@ export default function Sidebar({ role = 'student', isOpen = false, onNavigate }
 
   return (
     <aside
-      className={`w-[240px] min-h-screen flex flex-col fixed left-0 top-0 z-50 transition-transform duration-200 ease-in-out md:translate-x-0 ${
+      className={`w-[240px] min-h-screen flex flex-col fixed left-0 top-0 z-50 bg-primary border-r border-slate-700/40 transition-transform duration-200 ease-in-out md:translate-x-0 ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
       }`}
-      style={{ background: 'radial-gradient(circle at top, #183b73, #07122f 70%)' }}
       role="navigation"
       aria-label="Navegação principal"
     >
-      {/* Partículas — mesmo efeito do login/registro, atrás do conteúdo */}
-      <ParticleField className="absolute inset-0 w-full h-full pointer-events-none" />
-
       <div className="relative z-10 flex flex-col flex-1 min-h-0">
       {/* Logo */}
       <div className="px-5 pt-6 pb-5">
@@ -80,14 +75,14 @@ export default function Sidebar({ role = 'student', isOpen = false, onNavigate }
           onClick={onNavigate}
           className="no-underline flex items-center gap-3"
         >
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/15">
             <img src="/cerebro.png" alt="" className="w-5 h-5 brightness-0 invert" />
           </div>
           <div>
-            <span className="text-lg font-bold tracking-tight" style={{ color: '#FFFFFF' }}>
-              foca<span style={{ color: '#7DB8F0' }}>.</span>ai
+            <span className="text-lg font-bold tracking-tight text-white">
+              foca<span className="text-secondary">.</span>ai
             </span>
-            <p className="text-xs m-0 mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            <p className="text-xs m-0 mt-0.5 text-white/50">
               Cada momento importa.
             </p>
           </div>
@@ -95,10 +90,10 @@ export default function Sidebar({ role = 'student', isOpen = false, onNavigate }
       </div>
 
       {/* Divider */}
-      <div className="mx-5 mb-4" style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
+      <div className="mx-5 mb-4 h-px bg-white/10" />
 
       {/* Nav */}
-      <nav className="flex-1 px-3" style={{ background: 'none', border: 'none' }}>
+      <nav className="flex-1 px-3 bg-transparent border-none">
         <ul className="list-none p-0 m-0 space-y-0.5">
           {items.map((item) => {
             const active = isActive(item.to);
@@ -107,23 +102,19 @@ export default function Sidebar({ role = 'student', isOpen = false, onNavigate }
                 <Link
                   to={item.to}
                   onClick={onNavigate}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg no-underline text-sm font-medium transition-all"
-                  style={{
-                    color: active ? '#FFFFFF' : 'rgba(255,255,255,0.65)',
-                    backgroundColor: active ? 'rgba(255,255,255,0.15)' : 'transparent',
-                    fontWeight: active ? 600 : 500,
-                  }}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg no-underline text-sm font-medium transition-all ${
+                    active
+                      ? 'text-white bg-white/15 font-semibold'
+                      : 'text-white/70 hover:text-white hover:bg-white/10 font-medium'
+                  }`}
                   aria-current={active ? 'page' : undefined}
                 >
-                  <span
-                    className="w-5 h-5 flex-shrink-0"
-                    style={{ color: active ? '#FFFFFF' : 'rgba(255,255,255,0.55)' }}
-                  >
+                  <span className={`w-5 h-5 flex-shrink-0 ${active ? 'text-white' : 'text-white/60'}`}>
                     {item.icon}
                   </span>
                   {item.label}
                   {active && (
-                    <span className="ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: '#7DB8F0' }} />
+                    <span className="ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 bg-secondary" />
                   )}
                 </Link>
               </li>
@@ -134,17 +125,13 @@ export default function Sidebar({ role = 'student', isOpen = false, onNavigate }
 
       {/* Bottom section */}
       <div className="p-3 mt-auto">
-        <div className="mx-1 mb-2" style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
+        <div className="mx-1 mb-2 h-px bg-white/10" />
 
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
           aria-label={`Mudar para modo ${theme === 'dark' ? 'claro' : 'escuro'}`}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all cursor-pointer border-none"
-          style={{
-            backgroundColor: 'transparent',
-            color: 'rgba(255,255,255,0.65)',
-          }}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all cursor-pointer border-none bg-transparent text-white/70 hover:text-white hover:bg-white/10"
         >
           <span className="w-5 h-5 flex-shrink-0 flex items-center justify-center text-base">
             {theme === 'dark' ? '☀️' : '🌙'}
@@ -154,29 +141,22 @@ export default function Sidebar({ role = 'student', isOpen = false, onNavigate }
 
         {/* User + Logout */}
         {user && (
-          <div
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg mt-0.5"
-            style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-          >
-            <div
-              className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold"
-              style={{ backgroundColor: 'rgba(255,255,255,0.2)', color: '#FFFFFF' }}
-            >
+          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg mt-0.5 bg-white/10">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold bg-white/20 text-white">
               {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold m-0 truncate" style={{ color: '#FFFFFF' }}>
+              <p className="text-xs font-semibold m-0 truncate text-white">
                 {user.name}
               </p>
-              <p className="text-xs m-0 mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+              <p className="text-xs m-0 mt-0.5 text-white/50">
                 {user.role === 'teacher' ? 'Professor' : 'Aluno'}
               </p>
             </div>
             <button
               onClick={handleLogout}
               title="Sair"
-              className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer border-none transition-all"
-              style={{ backgroundColor: 'transparent', color: 'rgba(255,255,255,0.5)' }}
+              className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer border-none transition-all bg-transparent text-white/50 hover:text-white"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />

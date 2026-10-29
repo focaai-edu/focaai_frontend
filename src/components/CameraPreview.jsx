@@ -63,9 +63,9 @@ function drawHUD(ctx, pose, w, h) {
     const pct = Math.min(Math.abs(v) / max, 1);
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
     ctx.fillRect(bx + 74, y - 9, 68, 10);
-    ctx.fillStyle = pct > 0.85 ? '#ef4444' : pct > 0.6 ? '#f59e0b' : '#22c55e';
+    ctx.fillStyle = pct > 0.85 ? 'rgb(239, 68, 68)' : pct > 0.6 ? 'rgb(245, 158, 11)' : 'rgb(34, 197, 94)';
     ctx.fillRect(bx + 74, y - 9, Math.round(68 * pct), 10);
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = 'rgb(255, 255, 255)';
     ctx.fillText(`${label}: ${Math.round(v).toString().padStart(4)}°`, bx + 7, y);
   });
 }
@@ -111,7 +111,7 @@ export default function CameraPreview({ videoRef, source, error, landmarksRef, p
       <video ref={videoRef} className="hidden" playsInline muted />
       <canvas
         ref={canvasRef}
-        className="w-full max-w-[640px] rounded-xl border-2 border-gray-200 bg-[#1E293B]"
+        className="w-full max-w-[640px] rounded-xl border-2 border-slate-700 bg-surface-dark"
         width="640"
         height="480"
       />

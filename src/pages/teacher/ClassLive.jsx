@@ -137,9 +137,9 @@ export default function TeacherClassLive() {
   if (!cls) return null;
 
   return (
-    <div className="h-screen bg-[#F1F5F9] dark:bg-[#0F172A] flex flex-col overflow-hidden">
+    <div className="h-screen bg-bg-light dark:bg-bg-dark flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="flex-shrink-0 px-4 md:px-8 py-3 md:py-4 bg-[#1B4F81] text-white flex justify-between items-center flex-wrap gap-2 md:gap-3">
+      <header className="flex-shrink-0 px-4 md:px-8 py-3 md:py-4 bg-primary text-white flex justify-between items-center flex-wrap gap-2 md:gap-3">
         <div className="flex items-center gap-4">
           <button
             type="button"
@@ -168,7 +168,7 @@ export default function TeacherClassLive() {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <span className="w-2.5 h-2.5 rounded-full bg-green-400 shadow-[0_0_8px_#4ade80]" />
+          <span className="w-2.5 h-2.5 rounded-full bg-green-400" />
           <span className="text-sm font-semibold">AO VIVO</span>
           <button onClick={endClass} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors">
             Encerrar Aula
@@ -179,15 +179,15 @@ export default function TeacherClassLive() {
       <OpenTooLongNotice elapsedSeconds={elapsed} />
 
       {/* Mode Selector */}
-      <div className="flex-shrink-0 px-4 md:px-8 py-2.5 md:py-3 bg-white dark:bg-[#1E293B] border-b border-gray-200 dark:border-[#334155] flex gap-2 overflow-x-auto flex-nowrap scrollbar-none">
+      <div className="flex-shrink-0 px-4 md:px-8 py-2.5 md:py-3 bg-white dark:bg-surface-dark border-b border-border-light dark:border-border-dark flex gap-2 overflow-x-auto flex-nowrap scrollbar-none">
         {modes.map(m => (
           <button
             key={m.key}
             onClick={() => changeMode(m.key)}
             className={`px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-semibold whitespace-nowrap flex-shrink-0 border-none cursor-pointer transition-colors ${
               cls.monitoring_mode === m.key
-                ? 'bg-[#4A90D9] text-white'
-                : 'bg-[#F1F5F9] dark:bg-[#334155] text-gray-900 dark:text-[#F1F5F9] hover:bg-gray-200 dark:hover:bg-[#475569]'
+                ? 'bg-secondary text-white'
+                : 'bg-bg-light dark:bg-slate-700 text-gray-900 dark:text-text-primary-dark hover:bg-gray-200 dark:hover:bg-slate-600'
             }`}
           >
             {m.label}
@@ -209,16 +209,16 @@ export default function TeacherClassLive() {
         <div className="w-full md:flex-[7] p-4 md:p-6 overflow-y-visible md:overflow-y-auto">
           <StudentGrid students={students} monitoringMode={cls.monitoring_mode} />
         </div>
-        <div className="w-full md:flex-[3] p-4 md:p-6 border-t md:border-t-0 md:border-l border-gray-200 dark:border-[#334155] bg-white dark:bg-[#1E293B] overflow-y-visible md:overflow-y-auto min-h-[250px] md:min-h-0">
-          <h3 className="text-base font-semibold mb-4 text-gray-900 dark:text-[#F1F5F9] flex items-center gap-2">
+        <div className="w-full md:flex-[3] p-4 md:p-6 border-t md:border-t-0 md:border-l border-border-light dark:border-border-dark bg-white dark:bg-surface-dark overflow-y-visible md:overflow-y-auto min-h-[250px] md:min-h-0">
+          <h3 className="text-base font-semibold mb-4 text-gray-900 dark:text-text-primary-dark flex items-center gap-2">
             Transcrição
             {isBreak && (
-              <span className="text-xs font-normal text-gray-400 dark:text-[#64748B]">(pausada no intervalo)</span>
+              <span className="text-xs font-normal text-gray-400 dark:text-text-muted-dark">(pausada no intervalo)</span>
             )}
           </h3>
 
           {transcriptions.length === 0 ? (
-            <div className="text-center text-gray-500 dark:text-[#64748B] text-sm py-8">
+            <div className="text-center text-gray-500 dark:text-text-muted-dark text-sm py-8">
               <svg className="w-8 h-8 mx-auto mb-2 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
               </svg>
@@ -227,11 +227,11 @@ export default function TeacherClassLive() {
           ) : (
             <div className="text-sm leading-relaxed">
               {transcriptions.map((entry, i) => (
-                <div key={i} className={`mb-3 pb-3 ${i < transcriptions.length - 1 ? 'border-b border-gray-200 dark:border-[#334155]' : ''}`}>
-                  <span className="text-xs text-gray-400 dark:text-[#64748B] block mb-1">
+                <div key={i} className={`mb-3 pb-3 ${i < transcriptions.length - 1 ? 'border-b border-border-light dark:border-border-dark' : ''}`}>
+                  <span className="text-xs text-gray-400 dark:text-text-muted-dark block mb-1">
                     {entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString('pt-BR') : ''}
                   </span>
-                  <p className="m-0 text-gray-900 dark:text-[#F1F5F9]">{entry.content}</p>
+                  <p className="m-0 text-gray-900 dark:text-text-primary-dark">{entry.content}</p>
                 </div>
               ))}
               <div ref={bottomRef} />

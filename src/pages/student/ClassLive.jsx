@@ -110,14 +110,14 @@ export default function StudentClassLive() {
   }, [transcriptions]);
 
   if (loading) {
-    return <div className="flex items-center justify-center min-h-screen bg-[#0F172A] text-white text-sm">Carregando aula...</div>;
+    return <div className="flex items-center justify-center min-h-screen bg-bg-dark text-white text-sm">Carregando aula...</div>;
   }
   if (!cls) return null;
 
   return (
-    <div className="h-screen bg-[#0F172A] text-[#F1F5F9] flex flex-col overflow-hidden">
+    <div className="h-screen bg-bg-dark text-text-primary-dark flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="flex-shrink-0 px-4 md:px-6 py-3 bg-[#1B4F81] flex justify-between items-center">
+      <header className="flex-shrink-0 px-4 md:px-6 py-3 bg-primary flex justify-between items-center">
         <div>
           <h1 className="text-lg font-semibold m-0">{cls.title}</h1>
           <span className="text-xs opacity-80">{formatDuration(elapsed)} · {MODE_LABELS[mode] || mode}</span>
@@ -133,14 +133,14 @@ export default function StudentClassLive() {
       <OpenTooLongNotice elapsedSeconds={elapsed} />
 
       {teacherAway && (
-        <div role="status" className="flex-shrink-0 px-4 md:px-6 py-2 bg-[#334155] text-[#F1F5F9] text-center text-sm font-medium">
+        <div role="status" className="flex-shrink-0 px-4 md:px-6 py-2 bg-slate-700 text-text-primary-dark text-center text-sm font-medium">
           Professor desconectado
         </div>
       )}
 
       {/* Aviso de resumo pronto (RF13) */}
       {summaryNotice && (
-        <div role="status" className="flex-shrink-0 px-4 md:px-6 py-3 bg-[#4A90D9] text-white text-center text-sm font-medium motion-safe:animate-pulse">
+        <div role="status" className="flex-shrink-0 px-4 md:px-6 py-3 bg-secondary text-white text-center text-sm font-medium motion-safe:animate-pulse">
           Você perdeu um trecho da aula — o resumo já está disponível na revisão.
         </div>
       )}
@@ -156,13 +156,13 @@ export default function StudentClassLive() {
         </div>
 
         {/* Right: Transcription — full width on mobile, fixed width on desktop */}
-        <div className="w-full md:w-[300px] flex flex-col border-t md:border-t-0 md:border-l border-[#1E293B] bg-[#1E293B] min-h-[300px] md:min-h-0">
-          <h3 className="flex-shrink-0 text-sm font-semibold px-5 pt-5 pb-3 text-white border-b border-[#334155]">
+        <div className="w-full md:w-[300px] flex flex-col border-t md:border-t-0 md:border-l border-border-dark bg-surface-dark min-h-[300px] md:min-h-0">
+          <h3 className="flex-shrink-0 text-sm font-semibold px-5 pt-5 pb-3 text-white border-b border-border-dark">
             Transcrição ao vivo
           </h3>
           <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0">
             {transcriptions.length === 0 ? (
-              <div className="text-center text-[#64748B] text-sm py-8">
+              <div className="text-center text-text-muted-dark text-sm py-8">
                 <svg className="w-8 h-8 mx-auto mb-2 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                 </svg>
@@ -171,11 +171,11 @@ export default function StudentClassLive() {
             ) : (
               <div className="text-sm leading-relaxed">
                 {transcriptions.map((entry, i) => (
-                  <div key={i} className={`mb-3 pb-3 ${i < transcriptions.length - 1 ? 'border-b border-[#334155]' : ''}`}>
-                    <span className="text-xs text-[#64748B] block mb-1">
+                  <div key={i} className={`mb-3 pb-3 ${i < transcriptions.length - 1 ? 'border-b border-border-dark' : ''}`}>
+                    <span className="text-xs text-text-muted-dark block mb-1">
                       {entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString('pt-BR') : ''}
                     </span>
-                    <p className="m-0 text-[#F1F5F9]">{entry.content}</p>
+                    <p className="m-0 text-text-primary-dark">{entry.content}</p>
                   </div>
                 ))}
                 <div ref={bottomRef} />

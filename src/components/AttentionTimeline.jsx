@@ -2,12 +2,12 @@ import { formatSeconds } from '../lib/duration';
 import { STATUS_LABELS } from '../lib/labels';
 
 const STATUS_COLORS = {
-  attentive: '#22C55E',
-  distracted: '#4A90D9',
-  no_camera: '#F59E0B',
-  disconnected: '#EF4444',
-  absent: '#1F2937',
-  break: '#9CA3AF',
+  attentive: 'var(--color-attentive)',
+  distracted: 'var(--color-distracted)',
+  no_camera: 'var(--color-no-camera)',
+  disconnected: 'var(--color-danger)',
+  absent: 'var(--color-surface-dark)',
+  break: 'var(--color-disconnected)',
 };
 
 /**
@@ -54,20 +54,20 @@ export default function AttentionTimeline({ events = [], classStart, classEnd, o
   const segments = buildSegments(events, classStart, classEnd);
   if (segments.length === 0) {
     return (
-      <div className="py-8 text-center text-gray-500 text-sm">Sem dados de atenção disponíveis.</div>
+      <div className="py-8 text-center text-slate-500 dark:text-slate-400 text-sm">Sem dados de atenção disponíveis.</div>
     );
   }
 
   return (
     <div>
-      <div className="relative h-8 rounded-lg overflow-hidden border border-gray-200 mb-3">
+      <div className="relative h-8 rounded-lg overflow-hidden border border-border-light dark:border-border-dark mb-3">
         {segments.map((seg, i) => {
           const clickable = seg.status === 'distracted' && Boolean(onPeriodClick);
           const label = `${STATUS_LABELS[seg.status] || seg.status}: ${formatSeconds((seg.to - seg.from) / 1000)}`;
           const style = {
             left: `${seg.left}%`,
             width: `${seg.width}%`,
-            backgroundColor: STATUS_COLORS[seg.status] || '#9CA3AF',
+            backgroundColor: STATUS_COLORS[seg.status] || 'var(--color-disconnected)',
             cursor: clickable ? 'pointer' : 'default',
           };
           // Trecho desatento abre o resumo: é um botão, operável pelo teclado (#16).
@@ -92,7 +92,7 @@ export default function AttentionTimeline({ events = [], classStart, classEnd, o
         {Object.entries(STATUS_COLORS).map(([key, color]) => (
           <div key={key} className="flex items-center gap-1">
             <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
-            <span className="text-gray-500">{STATUS_LABELS[key]}</span>
+            <span className="text-slate-500 dark:text-slate-400">{STATUS_LABELS[key]}</span>
           </div>
         ))}
       </div>

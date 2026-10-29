@@ -254,14 +254,14 @@ export default function RoomCameraTest() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-[#F1F5F9] p-6">
+    <div className="min-h-screen bg-bg-dark text-text-primary-dark p-6">
       <div className="max-w-6xl mx-auto">
 
         {/* Header */}
         <header className="mb-6">
           <h1 className="text-xl font-semibold">Teste do algoritmo de atenção — imagem estática</h1>
-          <p className="text-sm text-[#94A3B8] mt-1">
-            Pipeline backend: <span className="font-mono text-[#7DB8F0]">YuNet + estimativa geométrica</span>.
+          <p className="text-sm text-text-secondary-dark mt-1">
+            Pipeline backend: <span className="font-mono text-secondary">YuNet + estimativa geométrica</span>.
             Ajuste os parâmetros e clique em <strong>Analisar</strong> para ver o impacto em tempo real.
           </p>
           <div className="mt-2 text-xs font-mono text-green-400">🟢 Backend (YuNet)</div>
@@ -269,18 +269,18 @@ export default function RoomCameraTest() {
 
         {/* Controles */}
         <div className="flex flex-wrap items-center gap-3 mb-5">
-          <label className="px-4 py-2 rounded-lg bg-[#1B4F81] text-white text-sm font-semibold cursor-pointer hover:bg-[#164572] transition-colors">
+          <label className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold cursor-pointer hover:bg-primary/90 transition-colors shadow-sm">
             Escolher imagem
             <input type="file" accept="image/*" onChange={onFile} className="hidden" />
           </label>
-          {fileName && <span className="text-xs text-[#94A3B8] font-mono truncate max-w-[240px]">{fileName}</span>}
+          {fileName && <span className="text-xs text-text-secondary-dark font-mono truncate max-w-[240px]">{fileName}</span>}
 
           <div className="flex items-center gap-2 ml-auto">
-            <span className="text-xs text-[#475569] uppercase tracking-wide">Modo</span>
+            <span className="text-xs text-slate-500 uppercase tracking-wide">Modo</span>
             <select
               value={mode}
               onChange={onModeChange}
-              className="text-sm rounded-lg border border-[#334155] bg-[#0F172A] text-[#F1F5F9] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30"
+              className="text-sm rounded-lg border border-border-dark bg-bg-dark text-text-primary-dark px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary/30"
             >
               {Object.entries(MODE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
@@ -289,7 +289,7 @@ export default function RoomCameraTest() {
           <button
             onClick={() => analyze()}
             disabled={!imgUrl || analyzing}
-            className="px-4 py-2 rounded-lg bg-green-500 text-white text-sm font-semibold hover:bg-green-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-lg bg-green-500 text-white text-sm font-semibold hover:bg-green-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
           >
             {analyzing ? 'Analisando...' : 'Analisar'}
           </button>
@@ -310,62 +310,62 @@ export default function RoomCameraTest() {
                 <canvas ref={overlayRef} className="absolute inset-0 pointer-events-none" style={{ width: '100%', height: '100%' }} />
               </div>
             ) : (
-              <p className="text-[#475569] text-sm p-10">Escolha uma imagem para começar.</p>
+              <p className="text-slate-500 text-sm p-10">Escolha uma imagem para começar.</p>
             )}
           </div>
 
           {/* Results panel */}
           <div className="space-y-4">
-            <div className="bg-[#1E293B] rounded-xl p-4">
+            <div className="bg-surface-dark border border-border-dark shadow-sm rounded-xl p-4">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs text-[#475569] uppercase tracking-wide font-medium">Agregado</p>
-                {elapsed != null && <span className="text-xs font-mono text-[#64748B]">⏱ {elapsed}ms</span>}
+                <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Agregado</p>
+                {elapsed != null && <span className="text-xs font-mono text-text-muted-dark">⏱ {elapsed}ms</span>}
               </div>
               {aggregate?.total > 0 ? (
                 <>
                   <p className={`text-3xl font-bold ${pctColor(aggregate.pct).text}`}>{aggregate.pct}%</p>
-                  <p className="text-xs text-[#94A3B8] mb-3">atenção média</p>
+                  <p className="text-xs text-text-secondary-dark mb-3">atenção média</p>
                   <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="p-2 rounded-lg bg-[#334155]">
-                      <p className="text-lg font-bold text-[#F1F5F9]">{aggregate.total}</p>
-                      <p className="text-[10px] text-[#94A3B8]">rostos</p>
+                    <div className="p-2 rounded-lg bg-slate-700">
+                      <p className="text-lg font-bold text-text-primary-dark">{aggregate.total}</p>
+                      <p className="text-[10px] text-text-secondary-dark">rostos</p>
                     </div>
-                    <div className="p-2 rounded-lg bg-[#334155]">
+                    <div className="p-2 rounded-lg bg-slate-700">
                       <p className="text-lg font-bold text-green-400">{aggregate.attentive}</p>
-                      <p className="text-[10px] text-[#94A3B8]">atentos</p>
+                      <p className="text-[10px] text-text-secondary-dark">atentos</p>
                     </div>
-                    <div className="p-2 rounded-lg bg-[#334155]">
+                    <div className="p-2 rounded-lg bg-slate-700">
                       <p className="text-lg font-bold text-amber-400">{aggregate.distracted}</p>
-                      <p className="text-[10px] text-[#94A3B8]">desatentos</p>
+                      <p className="text-[10px] text-text-secondary-dark">desatentos</p>
                     </div>
                   </div>
                 </>
               ) : aggregate ? (
-                <p className="text-[#475569] text-xs">Nenhum rosto detectado.</p>
+                <p className="text-slate-500 text-xs">Nenhum rosto detectado.</p>
               ) : (
-                <p className="text-[#475569] text-xs">Sem análise ainda.</p>
+                <p className="text-slate-500 text-xs">Sem análise ainda.</p>
               )}
             </div>
 
-            <div className="bg-[#1E293B] rounded-xl p-4">
-              <p className="text-xs text-[#475569] uppercase tracking-wide font-medium mb-2">
+            <div className="bg-surface-dark border border-border-dark shadow-sm rounded-xl p-4">
+              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium mb-2">
                 Thresholds ativos — {MODE_LABELS[mode]}
               </p>
-              <ul className="text-xs text-[#CBD5E1] font-mono space-y-0.5">
+              <ul className="text-xs text-slate-300 font-mono space-y-0.5">
                 <li>|yaw| &gt; {params.yaw_threshold}° → desatento</li>
                 <li>pitch &gt; {params.pitch_up}° (p/ cima) → desatento</li>
                 {t?.pitch_down !== null
                   ? <li>pitch &lt; -{params.pitch_down}° (p/ baixo) → desatento</li>
-                  : <li className="text-[#475569]">pitch p/ baixo → permitido</li>}
+                  : <li className="text-slate-500">pitch p/ baixo → permitido</li>}
               </ul>
             </div>
 
             {roomPayload && (
-              <div className="bg-[#1E293B] rounded-xl p-4">
-                <p className="text-xs text-[#475569] uppercase tracking-wide font-medium mb-2">
+              <div className="bg-surface-dark border border-border-dark shadow-sm rounded-xl p-4">
+                <p className="text-xs text-slate-500 uppercase tracking-wide font-medium mb-2">
                   Payload <span className="font-mono">room_attention_update</span>
                 </p>
-                <pre className="text-[11px] text-[#7DB8F0] font-mono overflow-x-auto whitespace-pre-wrap">
+                <pre className="text-[11px] text-secondary font-mono overflow-x-auto whitespace-pre-wrap">
 {JSON.stringify(roomPayload, null, 2)}
                 </pre>
               </div>
@@ -375,11 +375,11 @@ export default function RoomCameraTest() {
 
         {/* Per-face table */}
         {faces?.length > 0 && (
-          <div className="mt-6 bg-[#1E293B] rounded-xl p-4 overflow-x-auto">
-            <p className="text-xs text-[#475569] uppercase tracking-wide font-medium mb-3">Por rosto ({faces.length})</p>
+          <div className="mt-6 bg-surface-dark border border-border-dark shadow-sm rounded-xl p-4 overflow-x-auto">
+            <p className="text-xs text-slate-500 uppercase tracking-wide font-medium mb-3">Por rosto ({faces.length})</p>
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-[#64748B] text-xs border-b border-[#334155]">
+                <tr className="text-left text-text-muted-dark text-xs border-b border-border-dark">
                   <th className="py-2 pr-4">#</th>
                   <th className="py-2 pr-4">yaw</th>
                   <th className="py-2 pr-4">pitch</th>
@@ -392,16 +392,16 @@ export default function RoomCameraTest() {
               </thead>
               <tbody className="font-mono text-xs">
                 {faces.map((f, i) => (
-                  <tr key={i} className="border-b border-[#334155]/50">
-                    <td className="py-1.5 pr-4 text-[#94A3B8]">{i}</td>
+                  <tr key={i} className="border-b border-border-dark/50">
+                    <td className="py-1.5 pr-4 text-text-secondary-dark">{i}</td>
                     <td className="py-1.5 pr-4">{Number(f.yaw).toFixed(1)}°</td>
                     <td className="py-1.5 pr-4">{Number(f.pitch).toFixed(1)}°</td>
                     <td className="py-1.5 pr-4">{Number(f.roll).toFixed(1)}°</td>
-                    <td className={`py-1.5 pr-4 font-bold ${f.eye_ratio < params.eye_ratio_threshold ? 'text-amber-400' : 'text-[#94A3B8]'}`}>
+                    <td className={`py-1.5 pr-4 font-bold ${f.eye_ratio < params.eye_ratio_threshold ? 'text-amber-400' : 'text-text-secondary-dark'}`}>
                       {f.eye_ratio?.toFixed(2) ?? '—'}
                     </td>
                     <td className="py-1.5 pr-4">{f.student_id ? `${(f.confidence * 100).toFixed(0)}%` : '—'}</td>
-                    <td className="py-1.5 pr-4 text-[#7DB8F0]">{f.student_name || <span className="text-[#475569]">anônimo</span>}</td>
+                    <td className="py-1.5 pr-4 text-secondary">{f.student_name || <span className="text-slate-500">anônimo</span>}</td>
                     <td className={`py-1.5 font-semibold ${f.status === 'distracted' ? 'text-amber-400' : 'text-green-400'}`}>
                       {f.status === 'distracted' ? 'desatento' : 'atento'}
                     </td>
@@ -416,7 +416,7 @@ export default function RoomCameraTest() {
         <div className="mt-6">
           <button
             onClick={() => setShowParams(s => !s)}
-            className="flex items-center gap-2 text-sm font-semibold text-[#94A3B8] hover:text-[#F1F5F9] transition-colors mb-4 cursor-pointer bg-transparent border-none"
+            className="flex items-center gap-2 text-sm font-semibold text-text-secondary-dark hover:text-text-primary-dark transition-colors mb-4 cursor-pointer bg-transparent border-none"
           >
             <svg
               className={`w-4 h-4 transition-transform duration-200 ${showParams ? 'rotate-90' : ''}`}
@@ -425,7 +425,7 @@ export default function RoomCameraTest() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
             Parâmetros de detecção
-            <span className="text-xs text-[#475569] font-normal ml-1">
+            <span className="text-xs text-slate-500 font-normal ml-1">
               — alterações re-analisam automaticamente
             </span>
           </button>
@@ -433,16 +433,16 @@ export default function RoomCameraTest() {
           {showParams && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {PARAM_DEFS.map(section => (
-                <div key={section.section} className="bg-[#1E293B] rounded-xl p-4">
-                  <p className="text-xs text-[#475569] uppercase tracking-wide font-semibold mb-4">
+                <div key={section.section} className="bg-surface-dark border border-border-dark shadow-sm rounded-xl p-4">
+                  <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-4">
                     {section.section}
                   </p>
                   <div className="space-y-5">
                     {section.items.map(def => (
                       <div key={def.key}>
                         <div className="flex items-center justify-between mb-1">
-                          <label className="text-sm font-medium text-[#CBD5E1]">{def.label}</label>
-                          <span className="text-sm font-mono font-bold text-[#4A90D9]">
+                          <label className="text-sm font-medium text-slate-300">{def.label}</label>
+                          <span className="text-sm font-mono font-bold text-secondary">
                             {def.fmt(params[def.key])}
                           </span>
                         </div>
@@ -453,9 +453,9 @@ export default function RoomCameraTest() {
                           step={def.step}
                           value={params[def.key]}
                           onChange={e => updateParam(def.key, e.target.value)}
-                          className="w-full accent-[#4A90D9] cursor-pointer h-1.5"
+                          className="w-full accent-secondary cursor-pointer h-1.5"
                         />
-                        <p className="text-[11px] text-[#475569] mt-1.5 leading-snug">{def.desc}</p>
+                        <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">{def.desc}</p>
                       </div>
                     ))}
                   </div>

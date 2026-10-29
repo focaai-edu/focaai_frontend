@@ -6,6 +6,7 @@
   /* Primary palette */
   --color-primary: #1B4F81;
   --color-primary-light: #4A90D9;
+  --color-secondary: #4A90D9;
   --color-primary-50: #E8F0FA;
   --color-primary-100: #C5D8F2;
   --color-primary-200: #9DBFE8;
@@ -27,11 +28,23 @@
   --color-surface-card-dark: #334155;
   --color-surface-card-light: #FFFFFF;
 
+  /* Borders */
+  --color-border-dark: #334155;
+  --color-border-light: #E2E8F0;
+
   /* Text */
   --color-text-primary-dark: #F1F5F9;
   --color-text-secondary-dark: #94A3B8;
+  --color-text-muted-dark: #64748B;
   --color-text-primary-light: #0F172A;
   --color-text-secondary-light: #475569;
+  --color-text-muted-light: #64748B;
+
+  /* Status */
+  --color-attentive: #22C55E;
+  --color-distracted: #4A90D9;
+  --color-no-camera: #F59E0B;
+  --color-disconnected: #9CA3AF;
 
   /* Semantic */
   --color-success: #22C55E;

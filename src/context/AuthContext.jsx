@@ -114,7 +114,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{ user, loading, login, register, logout }}>
       {sessionEnded && (
-        <div role="alert" className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-[calc(100%-2rem)] px-4 py-3 rounded-lg bg-[#1B4F81] text-[#F1F5F9] text-sm shadow-sm">
+        <div role="alert" className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-[calc(100%-2rem)] px-4 py-3 rounded-lg bg-primary text-text-primary-dark text-sm shadow-sm">
           {SESSION_ENDED_TEXT}
         </div>
       )}
