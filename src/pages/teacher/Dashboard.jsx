@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import Layout from '../../components/Layout';
 import api from '../../services/api';
-import socket from '../../services/socket';
+import { formatDuration } from '../../lib/duration';
 
 const STATUS_LABELS = { live: 'Ao Vivo', scheduled: 'Agendada', ended: 'Encerrada' };
 const STATUS_COLORS = {
@@ -128,6 +128,8 @@ export default function TeacherDashboard() {
   const navigate = useNavigate();
   const [allClasses, setAllClasses]   = useState([]);
   const [tab, setTab]                 = useState('live');
+  // Relógio do "Ao vivo há ..." dos cards (#9, CA8).
+  const [now, setNow]                 = useState(() => Date.now());
   const [editingClass, setEditingClass] = useState(null); // null = closed, undefined = create, obj = edit
   const [showModal, setShowModal]     = useState(false);
   const [loading, setLoading]         = useState(true);
@@ -154,6 +156,10 @@ export default function TeacherDashboard() {
   }, []);
 
   useEffect(() => { fetchClasses(); }, [fetchClasses]);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const openCreate = () => { setEditingClass(null); setShowModal(true); };
   const openEdit   = (cls) => { setEditingClass(cls); setShowModal(true); };
@@ -167,9 +173,9 @@ export default function TeacherDashboard() {
   const handleStart = async (id) => {
     setError('');
     try {
+      // Só REST: o PATCH já muda o estado; o emit de socket era redundante (#9, F19).
       await api.patch(`/api/classes/${id}/start`);
-      socket.emit('start_class', { class_id: id });
-      navigate('/room');
+      navigate(`/teacher/classes/${id}/live`);
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao iniciar aula.');
     }
@@ -179,7 +185,6 @@ export default function TeacherDashboard() {
     setError('');
     try {
       await api.patch(`/api/classes/${id}/end`);
-      socket.emit('end_class', { class_id: id });
       await fetchClasses();
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao encerrar aula.');
@@ -321,7 +326,7 @@ export default function TeacherDashboard() {
                   <p className="text-xs text-gray-400 dark:text-[#475569] mt-0.5 truncate">{cls.description}</p>
                 )}
                 <p className="text-xs text-gray-400 dark:text-[#475569] mt-0.5">
-                  {cls.status === 'live'      && cls.started_at && `Iniciada em ${formatDate(cls.started_at)}`}
+                  {cls.status === 'live'      && cls.started_at && `Ao vivo há ${formatDuration((now - new Date(cls.started_at).getTime()) / 1000)}`}
                   {cls.status === 'scheduled' && `Criada em ${formatDate(cls.created_at)}`}
                   {cls.status === 'ended'     && cls.ended_at   && `Encerrada em ${formatDate(cls.ended_at)}`}
                 </p>
@@ -366,11 +371,18 @@ export default function TeacherDashboard() {
                 {cls.status === 'live' && (
                   <>
                     <button
-                      onClick={() => navigate('/room')}
+                      onClick={() => navigate(`/teacher/classes/${cls.id}/live`)}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4A90D9] text-white text-xs font-semibold hover:bg-[#3A7AC8] transition-colors"
                     >
                       <span className="w-1.5 h-1.5 rounded-full bg-white/80 animate-pulse" />
                       Acessar
+                    </button>
+                    {/* Câmera da sala: experimental, fica como opção secundária (#9). */}
+                    <button
+                      onClick={() => navigate('/room')}
+                      className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-[#334155] text-gray-600 dark:text-[#94A3B8] text-xs font-semibold hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors bg-transparent cursor-pointer"
+                    >
+                      Câmera da sala
                     </button>
                     <button
                       onClick={() => handleEnd(cls.id)}

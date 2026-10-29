@@ -3,13 +3,16 @@ import { useParams, useNavigate } from 'react-router';
 import api from '../../services/api';
 import socket from '../../services/socket';
 import StudentGrid from '../../components/StudentGrid';
+import OpenTooLongNotice from '../../components/OpenTooLongNotice';
+import { useElapsed } from '../../hooks/useElapsed';
+import { useLiveClassExitGuard } from '../../hooks/useLiveClassExitGuard';
+import { formatDuration } from '../../lib/duration';
 
 export default function TeacherClassLive() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [cls, setCls] = useState(null);
   const [students, setStudents] = useState([]);
-  const [elapsed, setElapsed] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [transcriptions, setTranscriptions] = useState([]);
@@ -21,6 +24,10 @@ export default function TeacherClassLive() {
   const micActiveRef = useRef(false);
 
   const classId = parseInt(id, 10);
+
+  // Os dados carregam antes de a aula ser conhecida; o guard só vale com ela ao vivo.
+  const [isLive, setIsLive] = useState(false);
+  const { allowLeave, dialog: leaveDialog } = useLiveClassExitGuard({ classId, active: isLive });
 
   const modes = [
     { key: 'full_attention', label: 'Atenção Total' },
@@ -75,7 +82,7 @@ export default function TeacherClassLive() {
       startChunk();
       setMicActive(true);
     } catch {
-      setError('Microfone não disponível. A transcrição não será gerada.');
+      setError('Não foi possível acessar o microfone. A aula continua, mas sem transcrição.');
     }
   }, [classId]);
 
@@ -103,6 +110,7 @@ export default function TeacherClassLive() {
         if (!cancelled) {
           setCls(res.data.class);
           if (res.data.class.status !== 'live') navigate('/teacher/dashboard');
+          else setIsLive(true);
         }
       } catch {
         if (!cancelled) navigate('/teacher/dashboard');
@@ -122,19 +130,27 @@ export default function TeacherClassLive() {
     if (socket.connected) join();
     else socket.connect();
 
+    const setStudentStatus = (studentId, status) =>
+      setStudents(prev => prev.map(s => (s.student_id === studentId ? { ...s, status } : s)));
     socket.on('student_joined', (data) => {
       setStudents(prev => {
-        if (prev.find(s => s.student_id === data.student_id)) return prev;
+        if (prev.find(s => s.student_id === data.student_id)) {
+          return prev.map(s => (s.student_id === data.student_id ? { ...s, status: 'connected' } : s));
+        }
         return [...prev, { student_id: data.student_id, student_name: data.student_name, status: 'connected' }];
       });
     });
-    socket.on('student_left', (data) => {
-      setStudents(prev => prev.filter(s => s.student_id !== data.student_id));
-    });
+    // O card fica na grade, marcado como fora da aula (#9, F18).
+    socket.on('student_left', (data) => setStudentStatus(data.student_id, 'disconnected'));
+    // Status de atenção confirmado de cada aluno (RN13).
+    socket.on('attention_status', (data) => setStudentStatus(data.student_id, data.status));
     socket.on('monitoring_mode_changed', (data) => {
       setCls(prev => prev ? { ...prev, monitoring_mode: data.mode } : prev);
     });
-    socket.on('class_ended', () => navigate(`/teacher/classes/${classId}/report`));
+    socket.on('class_ended', () => {
+      allowLeave();
+      navigate(`/teacher/classes/${classId}/report`);
+    });
 
     socket.on('new_transcription', (data) => {
       if (data.class_id === classId) {
@@ -144,12 +160,12 @@ export default function TeacherClassLive() {
 
     return () => {
       socket.emit('leave_class', { class_id: classId });
-      socket.off('student_joined'); socket.off('student_left');
+      socket.off('student_joined'); socket.off('student_left'); socket.off('attention_status');
       socket.off('monitoring_mode_changed'); socket.off('class_ended');
       socket.off('new_transcription');
       socket.off('connect', join);
     };
-  }, [classId, navigate]);
+  }, [classId, navigate, allowLeave]);
 
   // ---- Start/stop mic with class lifecycle ----
   useEffect(() => {
@@ -160,13 +176,7 @@ export default function TeacherClassLive() {
     return () => stopMic();
   }, [cls?.status, startMic, stopMic]);
 
-  // ---- Elapsed timer ----
-  useEffect(() => {
-    if (!cls?.started_at) return;
-    const started = new Date(cls.started_at).getTime();
-    const interval = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
-    return () => clearInterval(interval);
-  }, [cls?.started_at]);
+  const elapsed = useElapsed(cls?.started_at);
 
   // ---- Auto-scroll transcriptions ----
   useEffect(() => {
@@ -181,22 +191,20 @@ export default function TeacherClassLive() {
     socket.emit('change_monitoring_mode', { class_id: classId, mode });
   }, [classId]);
 
+  // O microfone só para depois de o servidor confirmar o fim; se o PATCH
+  // falhar, a aula segue ao vivo e a gravação continua (#9, F13).
   const endClass = useCallback(async () => {
     setError('');
-    stopMic();
     try {
       await api.patch(`/api/classes/${classId}/end`);
-      navigate(`/teacher/classes/${classId}/report`);
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao encerrar aula.');
+      return;
     }
-  }, [classId, navigate, stopMic]);
-
-  const formatTime = (secs) => {
-    const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
-    if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
-    return `${m}m ${String(s).padStart(2, '0')}s`;
-  };
+    stopMic();
+    allowLeave();
+    navigate(`/teacher/classes/${classId}/report`);
+  }, [classId, navigate, stopMic, allowLeave]);
 
   const isBreak = cls?.monitoring_mode === 'break';
 
@@ -207,16 +215,25 @@ export default function TeacherClassLive() {
     <div className="min-h-screen bg-[#F1F5F9] dark:bg-[#0F172A] flex flex-col">
       {/* Header */}
       <header className="px-8 py-4 bg-[#1B4F81] text-white flex justify-between items-center flex-wrap gap-3">
-        <div>
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => navigate('/teacher/dashboard')}
+            className="px-3 py-1.5 rounded-lg border border-white/30 bg-white/10 text-white text-sm hover:bg-white/20 transition-colors"
+          >
+            ← Painel
+          </button>
+          <div>
           <h1 className="text-xl font-semibold m-0 mb-0.5">{cls.title}</h1>
           <div className="flex items-center gap-3 text-xs opacity-80">
-            <span>{formatTime(elapsed)}</span>
+            <span>{formatDuration(elapsed)}</span>
             {micActive && (
               <span className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
                 Gravando
               </span>
             )}
+          </div>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -227,6 +244,8 @@ export default function TeacherClassLive() {
           </button>
         </div>
       </header>
+
+      <OpenTooLongNotice elapsedSeconds={elapsed} />
 
       {/* Mode Selector */}
       <div className="px-8 py-3 bg-white dark:bg-[#1E293B] border-b border-gray-200 dark:border-[#334155] flex gap-2 overflow-x-auto">
@@ -284,6 +303,7 @@ export default function TeacherClassLive() {
           )}
         </div>
       </div>
+      {leaveDialog}
     </div>
   );
 }

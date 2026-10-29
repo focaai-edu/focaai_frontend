@@ -79,6 +79,14 @@ Sem matriz (ausente ou com menos de 16 valores), a pose é `0, 0, 0`.
 
 **RF14 — Áudio do professor.** Com a aula `live`, a tela do professor (e a câmera da sala, `/room`) grava o microfone em trechos de **5 s**. Cada trecho é um WebM completo (um `MediaRecorder` por trecho). Trechos com 500 bytes ou menos são descartados. Cada trecho é enviado como `audio_chunk { class_id, audio, duration_ms }`, onde `duration_ms` é a duração real da gravação (o último trecho, ao encerrar, é mais curto). A gravação para ao encerrar a aula ou ao sair da tela.
 
+**RF23 — Professor no fluxo central.** "Iniciar" (depois do `PATCH /start` com sucesso) e "Acessar" levam o professor para `/teacher/classes/:id/live`; a câmera da sala (`/room`) fica como opção secundária ("Câmera da sala" no card). O dashboard usa só REST para iniciar e encerrar, sem `start_class`/`end_class` pelo socket. A tela ao vivo grava o microfone (RF14) sem depender de `/room`; com o microfone negado, mostra "Não foi possível acessar o microfone. A aula continua, mas sem transcrição." e não emite `audio_chunk`. "Encerrar Aula" só para a gravação depois de o `PATCH /end` dar certo; se falhar, mostra "Erro ao encerrar aula." e segue gravando. A grade de alunos mostra o `attention_status { student_id, status }` de cada um; com `student_left`, o card fica como "Fora da aula" (#9).
+
+**RF24 — Professor desconectado.** O aluno mostra "Professor desconectado" (`role="status"`) enquanto `teacher_presence.connected` da aula dele for `false`, recebido pelo evento `teacher_presence { class_id, connected, changed_at }` ou pelo campo `teacher_presence` do `class_state` (ao entrar ou reconectar). Eventos de outra aula são ignorados (backend RN25/RN26, #9).
+
+**RF25 — Sair com a aula ao vivo.** Em `/teacher/classes/:id/live` e em `/room` com uma aula ao vivo selecionada: fechar ou recarregar a aba pede a confirmação do navegador (`beforeunload`); navegação interna (voltar, menu, "← Painel") e "Fechar Sala" abrem o diálogo "A aula continua ao vivo. Encerrar a aula também?" com "Encerrar aula" (`PATCH /end` e segue; se falhar, fica na tela com "Erro ao encerrar aula."), "Sair sem encerrar" e "Continuar na aula". Saídas causadas pelo fim da aula (encerrar, `class_ended`) não perguntam. As duas telas têm o botão "← Painel", que volta para `/teacher/dashboard` sem encerrar a aula. A confirmação de navegação usa `useBlocker`, por isso o app roda num data router (`createBrowserRouter` com uma rota curinga para `<App />`) (#9).
+
+**RF26 — Duração da aula.** Um formatador único (`src/lib/duration.js`) mostra a duração no card ao vivo do dashboard ("Ao vivo há …") e no cabeçalho das telas ao vivo do aluno e do professor: "menos de 1 min", "12 min", "1 h 05 min", "26 h 10 min". Acima de 24 h, as telas ao vivo mostram também "Aula aberta há mais de 24 horas. Encerre-a se ela já terminou." (`role="status"`) (#9).
+
 **RF15 — Troca de modo (professor).** O professor troca o modo pelos botões da aula ao vivo. A interface marca o novo modo na hora (otimista) e emite `change_monitoring_mode`. Todos os clientes da sala se atualizam ao receber `monitoring_mode_changed`.
 
 ### 2.4 Revisão da aula (aluno)
@@ -128,18 +136,22 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 | RF20 | ✅ | — | — |
 | RF21 | ✅ | — | — |
 | RF22 | ✅ | — | — |
+| RF23 | ✅ | — | — |
+| RF24 | ✅ | — | — |
+| RF25 | ✅ | — | — |
+| RF26 | ✅ | — | — |
 
 Cobertura por testes:
 - Camada 1, unidade (#2, #8), em `src/lib/attentionAlgo.test.js`: RF01 (identidade e rotações conhecidas, que fixam o sinal), RF02 (EAR, landmark ausente, largura zero), RF03 e RF04 (por modo), além da paridade entre o worker e `attentionAlgo.js`.
 - Camada 2, integração (#8), em `src/components/AttentionMonitor.test.jsx` e `src/pages/student/ClassLive.test.jsx`, com worker, socket e câmera falsos (`src/test/attentionHarness.js`) e timers falsos: sequência exata de `attention_update` para RF05–RF08, RF18 (troca de modo e falha do detector), RF19 e RF20.
-- RF09, RF10 e RF21 (#3): reemissão na troca de modo em `AttentionMonitor.test.jsx`; reconexão do aluno (inclusive aula encerrada durante a queda) em `pages/student/ClassLive.test.jsx`; do professor em `pages/teacher/ClassLive.test.jsx`; aviso de erro em `components/ServerErrorAlert.test.jsx`. RF22 (#7): ciclo do socket com a sessão em `context/AuthContext.test.jsx` e contrato de identidade em `pages/student/ClassLive.test.jsx`. As demais regras ainda não têm teste.
+- RF09, RF10 e RF21 (#3): reemissão na troca de modo em `AttentionMonitor.test.jsx`; reconexão do aluno (inclusive aula encerrada durante a queda) em `pages/student/ClassLive.test.jsx`; do professor em `pages/teacher/ClassLive.test.jsx`; aviso de erro em `components/ServerErrorAlert.test.jsx`. RF22 (#7): ciclo do socket com a sessão em `context/AuthContext.test.jsx` e contrato de identidade em `pages/student/ClassLive.test.jsx`. RF23–RF26 (#9): `pages/teacher/Dashboard.test.jsx`, `pages/teacher/ClassLive.test.jsx`, `pages/student/ClassLive.test.jsx`, `pages/room/RoomCamera.test.jsx` e `lib/duration.test.js`. As demais regras ainda não têm teste.
 - Relatório do professor (#14, em `src/pages/teacher/ClassReport.test.jsx`): calibração do gráfico de atenção da turma (`AreaChart`) com domínio fixo `[0, 100]`, marcações `[0, 25, 50, 75, 100]`, formatação percentual sem repetição e margem esquerda `>= 0` prevenindo corte dos dígitos.
 
 ## 4. Fora do fluxo central (experimental)
 
 Sem regras fechadas; o comportamento atual é descrito só para referência.
 
-- **Câmera da sala (`/room`).** O professor escolhe a fonte: webcam do computador ou câmera IP MJPEG, via proxy do backend. As câmeras cadastradas ficam no `localStorage`. A cada 3 s, um frame JPEG é enviado por `room_frame`; o backend detecta os rostos (YuNet) e devolve caixas e o agregado atentos/desatentos, que são desenhados sobre o vídeo. A tela também grava o áudio da aula (RF14) e troca o modo (RF15).
+- **Câmera da sala (`/room`).** O professor escolhe a fonte: webcam do computador ou câmera IP MJPEG, via proxy do backend. As câmeras cadastradas ficam no `localStorage`. A cada 3 s, um frame JPEG é enviado por `room_frame`; o backend detecta os rostos (YuNet) e devolve caixas e o agregado atentos/desatentos, que são desenhados sobre o vídeo. A tela também grava o áudio da aula (RF14) e troca o modo (RF15). Ao receber `class_ended` da aula selecionada, fecha a sala (sem frames, sem microfone, câmera desligada), mostra "A aula foi encerrada." e recarrega as aulas ao vivo. Sair segue RF25 (#9).
 - **Teste com imagem estática (`/room-test`).** Envia uma imagem para `POST /api/room/analyze-frame`, com parâmetros ajustáveis (detecção, limiares, pose), para calibrar o algoritmo da câmera da sala. Os limiares da câmera da sala são do backend e hoje diferem de RF03.
 - `src/lib/faceDetection.js` (detecção em grade) e as funções de pose de `attentionAlgo.js` eram usadas pela versão da câmera da sala no navegador e ficaram como base para reuso.
 - Pendente de decisão de produto: câmera anônima ou identificada; calibração de posição/altura da câmera; unificar os limiares com RF03.
