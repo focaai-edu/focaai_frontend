@@ -33,7 +33,7 @@ export default function StudentClassReview() {
           setStudentData(reportRes.data.student_data || null);
           setAttentionEvents(eventsRes.data.events || []);
         }
-      } catch {}
+      } catch { /* estado de erro próprio: #5 (CA10) */ }
       finally { if (!cancelled) setLoading(false); }
     }
     load();

@@ -117,7 +117,7 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 | RF17 | ⚠️ | Correto no frontend, mas horários de eventos e resumos aparecem 3 h adiantados porque o backend envia sem `Z` | backend#8 |
 | RF18 | ✅ | — | — |
 
-Cobertura por testes: nenhuma ainda (#2).
+Cobertura por testes (#2): RF01 (`computeHeadPose`), RF03 e RF04 (`isDistracted`, por modo), em `src/lib/attentionAlgo.test.js`. As demais regras ainda não têm teste.
 
 ## 4. Fora do fluxo central (experimental)
 
@@ -131,4 +131,6 @@ Sem regras fechadas; o comportamento atual é descrito só para referência.
 ## 5. Desenvolvimento
 
 - Rodar: `npm run dev` (porta 5173; API e socket em `VITE_API_URL` / `VITE_SOCKET_URL`, padrão `http://localhost:5000`).
-- Verificações: `npm run lint`, `npm test` (Vitest, a partir de #2) e `npm run build`.
+- Verificações: `npm run lint`, `npm test` e `npm run build` (#2).
+- Testes: Vitest com `jsdom` e `@testing-library/react` (config em `vite.config.js`). `npm test` roda a suíte uma vez; `npm run test:watch` fica observando. Os testes ficam ao lado do código (`*.test.js` / `*.test.jsx`); `tests/` guarda testes do próprio ferramental (ex.: a config do ESLint).
+- Lint: `eslint src/` analisa `.js` e `.jsx` com globals do navegador, JSX e as regras de hooks do React (`rules-of-hooks` como erro, `exhaustive-deps` como warning). Erros reprovam; warnings são aceitos.
