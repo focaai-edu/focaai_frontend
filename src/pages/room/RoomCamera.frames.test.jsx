@@ -96,4 +96,24 @@ describe('/room — 1 frame por segundo, um por vez (#51)', () => {
     await flush();
     expect(frames()).toBe(2);
   });
+
+  it('#53: zero rostos mostra "Nenhum rosto detectado"; rostos voltam ao agregado; reabrir volta a "Analisando"', async () => {
+    await openRoom();
+    expect(screen.getByText('Analisando frame...')).toBeTruthy();
+    const update = (total, attentive) => socket.current.trigger('room_attention_update', {
+      class_id: 7, total_faces: total, attentive, distracted: total - attentive, attention_pct: 0, monitoring_mode: 'full_attention',
+    });
+    update(0, 0);
+    expect(screen.getByText('Nenhum rosto detectado')).toBeTruthy();
+    expect(screen.queryByText('Analisando frame...')).toBeNull();
+    update(2, 1);
+    expect(screen.getByText(/1\/2 atentos/)).toBeTruthy();
+    expect(screen.queryByText('Nenhum rosto detectado')).toBeNull();
+    update(0, 0);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Fechar Sala' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sair sem encerrar' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Abrir Sala' })); });
+    await flush();
+    expect(screen.getByText('Analisando frame...')).toBeTruthy();
+  });
 });
