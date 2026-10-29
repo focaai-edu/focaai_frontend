@@ -7,9 +7,9 @@ import {
 
 const socket = vi.hoisted(() => ({ current: null }));
 vi.mock('../services/socket', async () => {
-  const { createFakeSocket } = await import('../test/attentionHarness');
+  const { createFakeSocket, fakeSocketModule } = await import('../test/attentionHarness');
   socket.current = createFakeSocket();
-  return { default: socket.current };
+  return fakeSocketModule(socket.current);
 });
 
 import AttentionMonitor from './AttentionMonitor';

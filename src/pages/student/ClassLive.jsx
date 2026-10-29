@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
-import socket from '../../services/socket';
+import socket, { connectSocket } from '../../services/socket';
 import AttentionMonitor from '../../components/AttentionMonitor';
 import OpenTooLongNotice from '../../components/OpenTooLongNotice';
 import { useElapsed } from '../../hooks/useElapsed';
@@ -60,7 +60,7 @@ export default function StudentClassLive() {
     // `error` ao reentrar (ex.: "Aula nao esta ao vivo"): mesma consulta (F07).
     socket.on('error', checkStillLive);
     if (socket.connected) join();
-    else socket.connect();
+    else connectSocket();
 
     socket.on('class_state', (data) => {
       setCls(prev => prev || data.class);

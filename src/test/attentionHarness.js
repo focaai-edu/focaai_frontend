@@ -25,16 +25,25 @@ export function createFakeSocket() {
   let n = 0;
   const s = {
     connected: true,
+    // `active` do socket.io-client (conectando ou conectado); por padrão acompanha `connected`.
+    _active: null,
+    get active() { return this._active ?? this.connected; },
+    set active(v) { this._active = v; },
     id: 'sid-0',
     emit: vi.fn(),
     // Cada conexão nova ganha outro id, como no socket.io.
     connect: vi.fn(() => { s.connected = true; s.id = `sid-${++n}`; return s; }),
-    disconnect: vi.fn(() => { s.connected = false; s.id = undefined; return s; }),
+    disconnect: vi.fn(() => { s.connected = false; s._active = null; s.id = undefined; return s; }),
     on(ev, fn) { (handlers[ev] ||= []).push(fn); },
     off(ev, fn) { handlers[ev] = fn ? (handlers[ev] || []).filter((h) => h !== fn) : []; },
     trigger(ev, data) { act(() => { (handlers[ev] || []).forEach((h) => h(data)); }); },
   };
   return s;
+}
+
+// Módulo services/socket falso: mesmo contrato do real (connectSocket idempotente, #49).
+export function fakeSocketModule(s) {
+  return { default: s, connectSocket: () => { if (!s.active) s.connect(); } };
 }
 
 // Sequência de emissões no formato da issue: ["attention_update", status] ou [evento].
