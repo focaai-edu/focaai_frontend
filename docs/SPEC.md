@@ -155,6 +155,7 @@ Cobertura por testes:
 - RF13, RF16 e RF27 (#5): `components/SummaryText.test.jsx`, `components/AttentionTimeline.test.jsx`, `components/TranscriptPanel.test.jsx`, `pages/student/ClassReview.test.jsx`, `pages/student/ClassLive.test.jsx`, `pages/student/Dashboard.test.jsx`, `pages/teacher/ClassReport.summaries.test.jsx`, `pages/teacher/Dashboard.test.jsx` e `lib/duration.test.js`.
 - Relatório do professor (#14, em `src/pages/teacher/ClassReport.test.jsx`): calibração do gráfico de atenção da turma (`AreaChart`) com domínio fixo `[0, 100]`, marcações `[0, 25, 50, 75, 100]`, formatação percentual sem repetição e margem esquerda `>= 0` prevenindo corte dos dígitos.
 - Layout responsivo (#12, em `src/components/Layout.test.jsx`): colapso da sidebar no mobile (< 768px) como gaveta com backdrop, botão de menu com `aria-expanded`, fechamento por clique externo, tecla Escape e navegação por link, com margem responsiva (`ml-0 md:ml-[240px]`) e eliminação de transbordamento horizontal.
+- Telas de aula ao vivo no mobile (#13, em `src/pages/ClassLiveResponsive.test.jsx`): layout empilhado (`flex-col md:flex-row`) no aluno com câmera e monitor em largura total sem esmagamento e transcrição empilhada abaixo (`w-full md:w-[300px]`); no professor, seletor de modos sem truncamento (`overflow-x-auto flex-nowrap`) e empilhamento da grade de alunos e transcrição eliminando divisão de 170px.
 
 ## 4. Fora do fluxo central (experimental)
 
