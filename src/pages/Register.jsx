@@ -13,16 +13,15 @@ const STEPS = [
 function HowItWorks() {
   return (
     <ol className="space-y-2.5 max-w-md list-none p-0 m-0">
-      {STEPS.map((s, i) => (
+      {STEPS.map((s) => (
         <li
           key={s.title}
-          className="foca-anim flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.04] backdrop-blur-md px-3.5 py-2.5"
-          style={{ boxShadow: '0 12px 30px rgba(0,0,0,.25)', animation: 'foca-rise .5s ease-out both', animationDelay: `${i * 0.12}s` }}
+          className="flex items-start gap-3 rounded-xl border border-slate-800 bg-surface-dark px-3.5 py-2.5 shadow-sm"
         >
-          <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#4A90D9]/15 text-base flex-shrink-0">{s.icon}</span>
+          <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-secondary/15 text-base flex-shrink-0">{s.icon}</span>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-white m-0 mb-0.5">{s.title}</p>
-            <p className="text-xs text-[#94A3B8] m-0 leading-snug">{s.desc}</p>
+            <p className="text-xs text-text-secondary-dark m-0 leading-snug">{s.desc}</p>
           </div>
         </li>
       ))}
@@ -41,7 +40,7 @@ function RegisterMarketing() {
       <h1 className="text-3xl xl:text-4xl font-bold text-white leading-tight mb-3 max-w-xl">
         Crie sua conta e não deixe nenhum aluno para trás.
       </h1>
-      <p className="text-[#CBD5E1] text-base leading-relaxed max-w-lg mb-6">
+      <p className="text-slate-300 text-base leading-relaxed max-w-lg mb-6">
         Leva menos de um minuto. Comece a monitorar a atenção da turma e a
         recuperar os momentos perdidos com <strong className="text-white">Inteligência Artificial</strong>.
       </p>
@@ -83,27 +82,24 @@ export default function Register() {
   };
 
   const inputClass =
-    'w-full px-3.5 py-2.5 rounded-lg border border-white/10 bg-white/5 text-[#F1F5F9] placeholder-[#475569] focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/40 focus:border-[#4A90D9]/60 transition-colors text-sm';
-  const labelClass = 'block text-sm font-medium text-[#CBD5E1] mb-1';
+    'w-full px-3.5 py-2.5 rounded-lg border border-slate-700 bg-slate-800/80 text-text-primary-dark placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-secondary/50 focus:border-secondary transition-colors text-sm';
+  const labelClass = 'block text-sm font-medium text-slate-300 mb-1';
 
   const roleBtn = (active) =>
-    `p-2.5 rounded-lg border text-center text-sm font-medium transition-all ${
+    `p-2.5 rounded-lg border text-center text-sm font-medium transition-colors ${
       active
-        ? 'border-[#4A90D9] bg-[#4A90D9]/15 text-[#7DB8F0]'
-        : 'border-white/10 bg-white/5 text-[#94A3B8] hover:border-white/25'
+        ? 'border-secondary bg-secondary/15 text-secondary'
+        : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700'
     }`;
 
   return (
     <AuthLayout left={<RegisterMarketing />} tagline="Crie sua conta em menos de um minuto.">
-      <div
-        className="rounded-2xl border border-white/15 bg-white/[0.07] backdrop-blur-2xl p-6"
-        style={{ boxShadow: '0 24px 60px rgba(0,0,0,.45)' }}
-      >
+      <div className="rounded-xl border border-slate-800 bg-surface-dark p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-white mb-0.5">Criar conta</h2>
-        <p className="text-sm text-[#94A3B8] mb-5">Comece a usar a plataforma agora.</p>
+        <p className="text-sm text-text-secondary-dark mb-5">Comece a usar a plataforma agora.</p>
 
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-400/30 text-red-300 text-sm" role="alert">
+          <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm" role="alert">
             {error}
           </div>
         )}
@@ -142,16 +138,15 @@ export default function Register() {
 
           <button
             type="submit" disabled={submitting}
-            className="foca-anim w-full py-2.5 px-4 rounded-lg text-white font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/50 disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200 hover:-translate-y-0.5 mt-1"
-            style={{ background: 'linear-gradient(90deg,#2563eb,#3b82f6)', boxShadow: '0 10px 24px rgba(37,99,235,.35)' }}
+            className="w-full py-2.5 px-4 rounded-lg text-white font-semibold text-sm bg-secondary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-secondary/50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors shadow-sm mt-1"
           >
             {submitting ? 'Criando conta...' : 'Criar conta'}
           </button>
         </form>
 
-        <p className="text-center mt-5 text-sm text-[#64748B]">
+        <p className="text-center mt-5 text-sm text-slate-400">
           Já tem conta?{' '}
-          <Link to="/login" className="text-[#7DB8F0] font-medium hover:underline">Entrar</Link>
+          <Link to="/login" className="text-secondary font-medium hover:underline">Entrar</Link>
         </p>
       </div>
     </AuthLayout>

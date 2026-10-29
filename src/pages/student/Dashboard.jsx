@@ -47,10 +47,10 @@ export default function StudentDashboard() {
   }, [fetchClasses]);
 
   if (loading) {
-    return <Layout role="student"><p className="text-gray-500 dark:text-[#64748B]">Carregando...</p></Layout>;
+    return <Layout role="student"><p className="text-gray-500 dark:text-text-muted-dark">Carregando...</p></Layout>;
   }
 
-  const cardBase = "bg-white dark:bg-[#1E293B] rounded-xl border border-gray-200 dark:border-[#334155]";
+  const cardBase = "bg-white dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark shadow-sm";
 
   if (loadFailed && !loaded) {
     return <Layout role="student"><LoadError onRetry={() => { setLoading(true); fetchClasses(); }} /></Layout>;
@@ -58,7 +58,7 @@ export default function StudentDashboard() {
 
   return (
     <Layout role="student">
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-[#F1F5F9] mb-6">Minhas Aulas</h1>
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-text-primary-dark mb-6">Minhas Aulas</h1>
 
       {/* Live */}
       <section className="mb-8">
@@ -68,15 +68,15 @@ export default function StudentDashboard() {
         </h2>
         {liveClasses.length === 0 ? (
           <div className={`py-10 text-center ${cardBase}`}>
-            <p className="text-gray-500 dark:text-[#64748B] text-sm">Nenhuma aula ao vivo no momento.</p>
+            <p className="text-gray-500 dark:text-text-muted-dark text-sm">Nenhuma aula ao vivo no momento.</p>
           </div>
         ) : (
           <div className="space-y-3">
             {liveClasses.map(cls => (
               <div key={cls.id} className={`${cardBase} border-2 border-green-400 dark:border-green-600 p-5 flex justify-between items-center gap-4`}>
                 <div className="min-w-0">
-                  <h3 className="text-base font-semibold text-gray-900 dark:text-[#F1F5F9] m-0 mb-1">{cls.title}</h3>
-                  {cls.description && <p className="text-sm text-gray-500 dark:text-[#64748B] m-0 truncate">{cls.description}</p>}
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-text-primary-dark m-0 mb-1">{cls.title}</h3>
+                  {cls.description && <p className="text-sm text-gray-500 dark:text-text-muted-dark m-0 truncate">{cls.description}</p>}
                 </div>
                 <button
                   onClick={() => navigate(`/student/classes/${cls.id}/live`)}
@@ -99,7 +99,7 @@ export default function StudentDashboard() {
               <div key={cls.id} className={`${cardBase} p-4 flex items-center gap-3`}>
                 <div className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-[#F1F5F9] m-0">{cls.title}</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-text-primary-dark m-0">{cls.title}</h3>
                 </div>
               </div>
             ))}
@@ -109,22 +109,22 @@ export default function StudentDashboard() {
 
       {/* History */}
       <section>
-        <h2 className="text-base font-semibold mb-3 text-gray-500 dark:text-[#64748B]">Histórico</h2>
+        <h2 className="text-base font-semibold mb-3 text-gray-500 dark:text-text-muted-dark">Histórico</h2>
         {endedClasses.length === 0 ? (
           <div className={`py-10 text-center ${cardBase}`}>
-            <p className="text-gray-500 dark:text-[#64748B] text-sm">Nenhuma aula no histórico ainda.</p>
+            <p className="text-gray-500 dark:text-text-muted-dark text-sm">Nenhuma aula no histórico ainda.</p>
           </div>
         ) : (
           <div className="space-y-2">
             {endedClasses.map(cls => (
               <div key={cls.id} className={`${cardBase} p-4 flex justify-between items-center gap-4`}>
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-[#F1F5F9] m-0 mb-1">{cls.title}</h3>
-                  <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 dark:bg-[#334155] text-gray-500 dark:text-[#94A3B8]">Encerrada</span>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-text-primary-dark m-0 mb-1">{cls.title}</h3>
+                  <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-text-secondary-dark">Encerrada</span>
                 </div>
                 <button
                   onClick={() => navigate(`/student/classes/${cls.id}/review`)}
-                  className="flex-shrink-0 px-4 py-2 rounded-lg bg-[#4A90D9] text-white text-sm font-semibold hover:bg-[#3A7AC8] transition-colors"
+                  className="flex-shrink-0 px-4 py-2 rounded-lg bg-secondary text-white text-sm font-semibold hover:bg-secondary/90 transition-colors"
                 >
                   Revisar
                 </button>

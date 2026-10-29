@@ -16,23 +16,23 @@ export default function Health() {
 
   return (
     <div className="max-w-md mx-auto p-8">
-      <h1 className="text-2xl font-bold text-[#1B4F81] mb-6">foca.ai — Health Check</h1>
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3 text-sm">
+      <h1 className="text-2xl font-bold text-primary dark:text-secondary mb-6">foca.ai — Health Check</h1>
+      <div className="bg-surface-light dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark p-6 space-y-3 text-sm shadow-sm">
         <div className="flex justify-between">
-          <span className="text-gray-500">Status</span>
+          <span className="text-text-secondary-light dark:text-text-secondary-dark">Status</span>
           <span className="font-semibold text-green-500">{health.status}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-gray-500">Database</span>
+          <span className="text-text-secondary-light dark:text-text-secondary-dark">Database</span>
           <span className="font-semibold text-green-500">{health.db}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-gray-500">Users</span>
-          <span className="font-semibold">{health.user_count}</span>
+          <span className="text-text-secondary-light dark:text-text-secondary-dark">Users</span>
+          <span className="font-semibold text-text-primary-light dark:text-text-primary-dark">{health.user_count}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-gray-500">Worker</span>
-          <span className="font-semibold">{health.worker_mode}</span>
+          <span className="text-text-secondary-light dark:text-text-secondary-dark">Worker</span>
+          <span className="font-semibold text-text-primary-light dark:text-text-primary-dark">{health.worker_mode}</span>
         </div>
       </div>
     </div>

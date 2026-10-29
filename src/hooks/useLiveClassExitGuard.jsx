@@ -80,7 +80,7 @@ export function useLiveClassExitGuard({ classId, active }) {
       <Dialog
         titleId="leave-live-class-title"
         onClose={stay}
-        className="w-full max-w-sm rounded-xl bg-white dark:bg-[#1E293B] p-6 text-gray-900 dark:text-[#F1F5F9]"
+        className="w-full max-w-sm rounded-xl bg-white dark:bg-surface-dark border border-border-light dark:border-border-dark p-6 text-gray-900 dark:text-text-primary-dark shadow-sm"
       >
         <p id="leave-live-class-title" className="m-0 mb-4 text-base font-semibold">
           A aula continua ao vivo. Encerrar a aula também?
@@ -99,7 +99,7 @@ export function useLiveClassExitGuard({ classId, active }) {
             type="button"
             onClick={leaveWithoutEnding}
             disabled={ending}
-            className="px-4 py-2 rounded-lg border border-gray-300 dark:border-[#334155] text-sm font-semibold bg-transparent"
+            className="px-4 py-2 rounded-lg border border-border-light dark:border-border-dark text-sm font-semibold bg-transparent hover:bg-gray-50 dark:hover:bg-slate-700"
           >
             Sair sem encerrar
           </button>
@@ -108,7 +108,7 @@ export function useLiveClassExitGuard({ classId, active }) {
             onClick={stay}
             disabled={ending}
             autoFocus
-            className="px-4 py-2 rounded-lg text-sm font-semibold text-[#1B4F81] dark:text-[#4A90D9] bg-transparent"
+            className="px-4 py-2 rounded-lg text-sm font-semibold text-primary dark:text-secondary bg-transparent hover:bg-gray-50 dark:hover:bg-slate-700"
           >
             Continuar na aula
           </button>

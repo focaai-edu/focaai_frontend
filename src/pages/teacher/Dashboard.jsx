@@ -31,17 +31,17 @@ function DeleteClassDialog({ cls, busy, onConfirm, onCancel }) {
       <Dialog
         titleId="delete-class-title"
         onClose={busy ? () => {} : onCancel}
-        className="bg-white dark:bg-[#1E293B] rounded-2xl p-6 max-w-md w-full shadow-xl"
+        className="bg-white dark:bg-surface-dark rounded-2xl p-6 max-w-md w-full shadow-sm"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="delete-class-title" className="text-lg font-semibold text-gray-900 dark:text-[#F1F5F9] mb-3">Excluir aula</h2>
-        <p className="text-sm text-gray-600 dark:text-[#CBD5E1] mb-5">{message}</p>
+        <h2 id="delete-class-title" className="text-lg font-semibold text-gray-900 dark:text-text-primary-dark mb-3">Excluir aula</h2>
+        <p className="text-sm text-gray-600 dark:text-text-muted-dark mb-5">{message}</p>
         <div className="flex gap-2 justify-end">
           <button
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="px-4 py-2 rounded-lg border border-gray-200 dark:border-[#334155] text-gray-600 dark:text-[#94A3B8] text-sm font-medium cursor-pointer hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors bg-transparent disabled:opacity-50"
+            className="px-4 py-2 rounded-lg border border-gray-200 dark:border-border-dark text-gray-600 dark:text-text-muted-dark text-sm font-medium cursor-pointer hover:bg-gray-50 dark:hover:bg-border-dark transition-colors bg-transparent disabled:opacity-50"
           >
             Cancelar
           </button>
@@ -96,18 +96,18 @@ function ClassFormModal({ editing, onSave, onClose }) {
       <Dialog
         titleId="class-form-title"
         onClose={onClose}
-        className="bg-white dark:bg-[#1E293B] rounded-2xl p-6 max-w-md w-full shadow-xl"
+        className="bg-white dark:bg-surface-dark rounded-xl p-6 max-w-md w-full shadow-sm border border-border-light dark:border-border-dark"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-5">
-          <h2 id="class-form-title" className="text-lg font-semibold text-gray-900 dark:text-[#F1F5F9]">
+          <h2 id="class-form-title" className="text-lg font-semibold text-gray-900 dark:text-text-primary-dark">
             {isEdit ? 'Editar Aula' : 'Nova Aula'}
           </h2>
           <button
             type="button"
             aria-label="Fechar janela"
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 dark:text-[#64748B] hover:text-gray-600 dark:hover:text-[#94A3B8] hover:bg-gray-100 dark:hover:bg-[#334155] transition-colors border-none bg-transparent cursor-pointer"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 dark:text-text-muted-dark hover:text-gray-600 dark:hover:text-text-secondary-dark hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors border-none bg-transparent cursor-pointer"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -121,7 +121,7 @@ function ClassFormModal({ editing, onSave, onClose }) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="cls-title" className="block text-sm font-medium text-gray-700 dark:text-[#CBD5E1] mb-1.5">
+            <label htmlFor="cls-title" className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
               Título <span className="text-red-400">*</span>
             </label>
             <input
@@ -131,11 +131,11 @@ function ClassFormModal({ editing, onSave, onClose }) {
               onChange={e => setTitle(e.target.value)}
               placeholder="Ex: Matemática — Revisão para prova"
               autoFocus
-              className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 dark:border-[#334155] bg-white dark:bg-[#0F172A] text-gray-900 dark:text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9] placeholder-gray-400 dark:placeholder-[#475569]"
+              className="w-full px-3.5 py-2.5 rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-bg-dark text-gray-900 dark:text-text-primary-dark text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary placeholder-gray-400 dark:placeholder-slate-500"
             />
           </div>
           <div>
-            <label htmlFor="cls-desc" className="block text-sm font-medium text-gray-700 dark:text-[#CBD5E1] mb-1.5">
+            <label htmlFor="cls-desc" className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
               Descrição <span className="text-gray-400 font-normal">(opcional)</span>
             </label>
             <textarea
@@ -144,21 +144,21 @@ function ClassFormModal({ editing, onSave, onClose }) {
               onChange={e => setDescription(e.target.value)}
               placeholder="Descreva o conteúdo da aula..."
               rows={3}
-              className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 dark:border-[#334155] bg-white dark:bg-[#0F172A] text-gray-900 dark:text-[#F1F5F9] text-sm focus:outline-none focus:ring-2 focus:ring-[#4A90D9]/30 focus:border-[#4A90D9] resize-none placeholder-gray-400 dark:placeholder-[#475569]"
+              className="w-full px-3.5 py-2.5 rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-bg-dark text-gray-900 dark:text-text-primary-dark text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary resize-none placeholder-gray-400 dark:placeholder-slate-500"
             />
           </div>
           <div className="flex gap-2 justify-end pt-1">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-lg border border-gray-200 dark:border-[#334155] text-gray-600 dark:text-[#94A3B8] text-sm font-medium cursor-pointer hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors bg-transparent"
+              className="px-4 py-2 rounded-lg border border-border-light dark:border-border-dark text-gray-600 dark:text-text-secondary-dark text-sm font-medium cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors bg-transparent"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-4 py-2 rounded-lg bg-[#1B4F81] text-white text-sm font-semibold hover:bg-[#164572] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {submitting ? 'Salvando...' : isEdit ? 'Salvar' : 'Criar Aula'}
             </button>
@@ -287,15 +287,15 @@ export default function TeacherDashboard() {
       {/* Page header */}
       <div className="flex justify-between items-start mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-[#F1F5F9] m-0 mb-1">Minhas Aulas</h1>
-          <p className="text-sm text-gray-500 dark:text-[#64748B] m-0">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-text-primary-dark m-0 mb-1">Minhas Aulas</h1>
+          <p className="text-sm text-gray-500 dark:text-text-muted-dark m-0">
             {counts.live > 0 && <span className="text-green-600 font-medium">{counts.live} ao vivo · </span>}
             {counts.scheduled} agendada{counts.scheduled !== 1 ? 's' : ''} · {counts.ended} encerrada{counts.ended !== 1 ? 's' : ''}
           </p>
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#1B4F81] text-white font-semibold text-sm hover:bg-[#164572] transition-colors shadow-sm"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -320,7 +320,7 @@ export default function TeacherDashboard() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-0 mb-6 border-b border-gray-200 dark:border-[#334155]">
+      <div className="flex gap-0 mb-6 border-b border-border-light dark:border-border-dark">
         {tabs.map(t => (
           <button
             key={t.key}
@@ -330,8 +330,8 @@ export default function TeacherDashboard() {
             aria-label={counts[t.key] > 0 ? `${t.label}, ${counts[t.key]} ${counts[t.key] === 1 ? 'aula' : 'aulas'}` : t.label}
             className={`relative px-5 py-2.5 text-sm font-medium border-none cursor-pointer transition-colors bg-transparent ${
               tab === t.key
-                ? 'text-[#1B4F81] dark:text-[#7DB8F0]'
-                : 'text-gray-500 dark:text-[#64748B] hover:text-gray-700 dark:hover:text-[#94A3B8]'
+                ? 'text-primary dark:text-secondary'
+                : 'text-gray-500 dark:text-text-muted-dark hover:text-gray-700 dark:hover:text-text-secondary-dark'
             }`}
           >
             {t.label}
@@ -339,11 +339,11 @@ export default function TeacherDashboard() {
               <span aria-hidden="true" className={`ml-2 px-1.5 py-0.5 rounded-full text-xs font-semibold ${
                 t.key === 'live'
                   ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                  : 'bg-gray-100 dark:bg-[#334155] text-gray-500 dark:text-[#94A3B8]'
+                  : 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-text-secondary-dark'
               }`}>{counts[t.key]}</span>
             )}
             {tab === t.key && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1B4F81] rounded-t-sm" />
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-sm" />
             )}
           </button>
         ))}
@@ -353,25 +353,25 @@ export default function TeacherDashboard() {
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
-            <div key={i} className="h-20 bg-gray-100 dark:bg-[#1E293B] rounded-xl animate-pulse" />
+            <div key={i} className="h-20 bg-gray-100 dark:bg-surface-dark rounded-xl animate-pulse" />
           ))}
         </div>
       ) : loadFailed ? (
         <LoadError onRetry={() => { setLoading(true); fetchClasses(); }} />
       ) : classes.length === 0 ? (
         <div className="py-20 text-center">
-          <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-[#1E293B] flex items-center justify-center mx-auto mb-4">
-            <svg className="w-6 h-6 text-gray-400 dark:text-[#475569]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-surface-dark flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6 text-gray-400 dark:text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                 d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
             </svg>
           </div>
-          <p className="text-gray-700 dark:text-[#CBD5E1] font-medium text-sm mb-1">{emptyMessages[tab].title}</p>
-          <p className="text-gray-400 dark:text-[#475569] text-xs">{emptyMessages[tab].sub}</p>
+          <p className="text-gray-700 dark:text-slate-300 font-medium text-sm mb-1">{emptyMessages[tab].title}</p>
+          <p className="text-gray-400 dark:text-slate-500 text-xs">{emptyMessages[tab].sub}</p>
           {tab === 'scheduled' && (
             <button
               onClick={openCreate}
-              className="mt-4 px-4 py-2 rounded-lg bg-[#1B4F81] text-white text-sm font-semibold hover:bg-[#164572] transition-colors"
+              className="mt-4 px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors"
             >
               + Nova Aula
             </button>
@@ -382,26 +382,26 @@ export default function TeacherDashboard() {
           {classes.map(cls => (
             <div
               key={cls.id}
-              className="group bg-white dark:bg-[#1E293B] rounded-xl border border-gray-200 dark:border-[#334155] px-5 py-4 flex items-center gap-4 hover:border-[#4A90D9]/40 hover:shadow-sm transition-all"
+              className="group bg-white dark:bg-surface-dark rounded-xl border border-border-light dark:border-border-dark px-5 py-4 flex items-center gap-4 hover:border-secondary/40 hover:shadow-sm transition-all"
             >
               {/* Status dot */}
               <div className={`flex-shrink-0 w-2 h-2 rounded-full mt-0.5 ${
-                cls.status === 'live'      ? 'bg-green-500 shadow-[0_0_6px_#22c55e]' :
+                cls.status === 'live'      ? 'bg-green-500' :
                 cls.status === 'scheduled' ? 'bg-amber-400' : 'bg-gray-300'
               }`} />
 
               {/* Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-semibold text-gray-900 dark:text-[#F1F5F9] truncate">{cls.title}</span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-text-primary-dark truncate">{cls.title}</span>
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${STATUS_COLORS[cls.status]}`}>
                     {STATUS_LABELS[cls.status]}
                   </span>
                 </div>
                 {cls.description && (
-                  <p className="text-xs text-gray-400 dark:text-[#475569] mt-0.5 truncate">{cls.description}</p>
+                  <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 truncate">{cls.description}</p>
                 )}
-                <p className="text-xs text-gray-400 dark:text-[#475569] mt-0.5">
+                <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
                   {cls.status === 'live'      && cls.started_at && `Ao vivo há ${formatDuration((now - new Date(cls.started_at).getTime()) / 1000)}`}
                   {cls.status === 'scheduled' && `Criada em ${formatDate(cls.created_at)}`}
                   {cls.status === 'ended'     && cls.ended_at   && `Encerrada em ${formatDate(cls.ended_at)}`}
@@ -425,7 +425,7 @@ export default function TeacherDashboard() {
                       onClick={() => openEdit(cls)}
                       title="Editar aula"
                       aria-label={`Editar aula ${cls.title}`}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 dark:border-[#334155] text-gray-500 dark:text-[#94A3B8] hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors bg-transparent cursor-pointer"
+                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-light dark:border-border-dark text-gray-500 dark:text-text-secondary-dark hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors bg-transparent cursor-pointer"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -451,7 +451,7 @@ export default function TeacherDashboard() {
                   <>
                     <button
                       onClick={() => navigate(`/teacher/classes/${cls.id}/live`)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4A90D9] text-white text-xs font-semibold hover:bg-[#3A7AC8] transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary text-white text-xs font-semibold hover:bg-secondary/90 transition-colors"
                     >
                       <span className="w-1.5 h-1.5 rounded-full bg-white/80 animate-pulse" />
                       Acessar
@@ -459,7 +459,7 @@ export default function TeacherDashboard() {
                     {/* Câmera da sala: experimental, fica como opção secundária (#9). */}
                     <button
                       onClick={() => navigate('/room')}
-                      className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-[#334155] text-gray-600 dark:text-[#94A3B8] text-xs font-semibold hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors bg-transparent cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg border border-border-light dark:border-border-dark text-gray-600 dark:text-text-secondary-dark text-xs font-semibold hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors bg-transparent cursor-pointer"
                     >
                       Câmera da sala
                     </button>
@@ -476,7 +476,7 @@ export default function TeacherDashboard() {
                   <>
                     <button
                       onClick={() => navigate(`/teacher/classes/${cls.id}/report`)}
-                      className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-[#334155] text-gray-600 dark:text-[#94A3B8] text-xs font-semibold hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors bg-transparent cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg border border-border-light dark:border-border-dark text-gray-600 dark:text-text-secondary-dark text-xs font-semibold hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors bg-transparent cursor-pointer"
                     >
                       Ver Relatório
                     </button>
@@ -484,7 +484,7 @@ export default function TeacherDashboard() {
                       onClick={() => openEdit(cls)}
                       title="Editar aula"
                       aria-label={`Editar aula ${cls.title}`}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 dark:border-[#334155] text-gray-500 dark:text-[#94A3B8] hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors bg-transparent cursor-pointer"
+                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-border-light dark:border-border-dark text-gray-500 dark:text-text-secondary-dark hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors bg-transparent cursor-pointer"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}

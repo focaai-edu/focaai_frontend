@@ -117,10 +117,10 @@ export default function StudentClassReview() {
   };
 
   if (loading) {
-    return <Layout role="student"><p className="text-gray-500 dark:text-[#64748B]">Carregando revisão...</p></Layout>;
+    return <Layout role="student"><p className="text-gray-500 dark:text-text-muted-dark">Carregando revisão...</p></Layout>;
   }
 
-  const cardBase = "rounded-xl bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-[#334155]";
+  const cardBase = "rounded-xl bg-white dark:bg-surface-dark border border-border-light dark:border-border-dark shadow-sm";
 
   if (loadFailed) {
     return <Layout role="student"><LoadError onRetry={() => { setLoading(true); load(); }} /></Layout>;
@@ -129,13 +129,13 @@ export default function StudentClassReview() {
   return (
     <Layout role="student">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold m-0 mb-1 text-gray-900 dark:text-[#F1F5F9]">{cls?.title || 'Revisão da Aula'}</h1>
-        <p className="text-sm text-gray-500 dark:text-[#64748B] m-0">Duração: {totalDuration} minutos</p>
+        <h1 className="text-2xl font-bold m-0 mb-1 text-gray-900 dark:text-text-primary-dark">{cls?.title || 'Revisão da Aula'}</h1>
+        <p className="text-sm text-gray-500 dark:text-text-muted-dark m-0">Duração: {totalDuration} minutos</p>
       </div>
 
       {!studentData ? (
         <div className={`py-12 text-center ${cardBase}`}>
-          <p className="text-gray-500 dark:text-[#64748B] text-sm">
+          <p className="text-gray-500 dark:text-text-muted-dark text-sm">
             Você não participou desta aula ou os dados ainda não estão disponíveis.
           </p>
         </div>
@@ -145,29 +145,29 @@ export default function StudentClassReview() {
           <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-4 mb-8">
             <div className={`p-5 ${cardBase} text-center`}>
               <p className="text-2xl font-bold m-0 text-green-500">{formatNumber(studentData.time_attentive_minutes)}m</p>
-              <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Tempo atento</p>
+              <p className="text-xs text-gray-500 dark:text-text-muted-dark mt-1 m-0">Tempo atento</p>
             </div>
             <div className={`p-5 ${cardBase} text-center`}>
-              <p className="text-2xl font-bold m-0 text-[#4A90D9]">{formatNumber(studentData.time_distracted_minutes)}m</p>
-              <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Tempo desatento</p>
+              <p className="text-2xl font-bold m-0 text-secondary">{formatNumber(studentData.time_distracted_minutes)}m</p>
+              <p className="text-xs text-gray-500 dark:text-text-muted-dark mt-1 m-0">Tempo desatento</p>
             </div>
             <div className={`p-5 ${cardBase} text-center`}>
               <p className={`text-2xl font-bold m-0 ${studentData.attention_percentage >= 70 ? 'text-green-500' : studentData.attention_percentage >= 40 ? 'text-amber-500' : 'text-red-500'}`}>
                 {formatPercent(studentData.attention_percentage)}
               </p>
-              <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Atenção</p>
+              <p className="text-xs text-gray-500 dark:text-text-muted-dark mt-1 m-0">Atenção</p>
             </div>
             {studentData.time_no_camera_minutes > 0 && (
               <div className={`p-5 ${cardBase} text-center`}>
                 <p className="text-2xl font-bold m-0 text-amber-500">{formatNumber(studentData.time_no_camera_minutes)}m</p>
-                <p className="text-xs text-gray-500 dark:text-[#64748B] mt-1 m-0">Sem câmera</p>
+                <p className="text-xs text-gray-500 dark:text-text-muted-dark mt-1 m-0">Sem câmera</p>
               </div>
             )}
           </div>
 
           {/* Timeline */}
           <div className={`p-5 ${cardBase} mb-8`}>
-            <h2 className="text-base font-semibold mb-4 text-gray-900 dark:text-[#F1F5F9]">Linha do Tempo de Atenção</h2>
+            <h2 className="text-base font-semibold mb-4 text-gray-900 dark:text-text-primary-dark">Linha do Tempo de Atenção</h2>
             {timelineEvents.length > 0 ? (
               <AttentionTimeline
                 events={timelineEvents}
@@ -176,7 +176,7 @@ export default function StudentClassReview() {
                 onPeriodClick={handleDistractionClick}
               />
             ) : (
-              <p className="text-sm text-gray-500 dark:text-[#64748B] text-center py-8">
+              <p className="text-sm text-gray-500 dark:text-text-muted-dark text-center py-8">
                 Nenhum dado de atenção registrado nesta aula.
               </p>
             )}
@@ -185,32 +185,32 @@ export default function StudentClassReview() {
           {/* Distraction events list */}
           {events.length > 0 && (
             <div className={`${cardBase} overflow-hidden mb-8`}>
-              <h2 className="text-base font-semibold p-4 border-b border-gray-200 dark:border-[#334155] m-0 text-gray-900 dark:text-[#F1F5F9]">
+              <h2 className="text-base font-semibold p-4 border-b border-border-light dark:border-border-dark m-0 text-gray-900 dark:text-text-primary-dark">
                 Resumos dos Momentos Perdidos ({events.length})
               </h2>
               {/* Cada item é um botão: abre o resumo com clique, Enter ou Espaço (#16, V10). */}
-              <ul data-distraction-list className="divide-y divide-gray-200 dark:divide-[#334155] m-0 p-0 list-none">
+              <ul data-distraction-list className="divide-y divide-border-light dark:divide-border-dark m-0 p-0 list-none">
                 {events.map((evt, i) => (
                   <li key={i}>
                   <button
                     type="button"
                     onClick={() => handleDistractionClick(evt)}
-                    className="w-full text-left block p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-[#0F172A]/50 transition-colors bg-transparent border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+                    className="w-full text-left block p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-bg-dark/50 transition-colors bg-transparent border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
                   >
                     <span className="flex justify-between items-center mb-1">
-                      <span className="text-xs font-mono text-gray-500 dark:text-[#64748B]">
+                      <span className="text-xs font-mono text-gray-500 dark:text-text-muted-dark">
                         {evt.started_at ? new Date(evt.started_at).toLocaleTimeString('pt-BR') : '?'}
                         {' → '}
                         {evt.ended_at ? new Date(evt.ended_at).toLocaleTimeString('pt-BR') : '?'}
                       </span>
-                      <span className="text-xs text-[#4A90D9] font-semibold">
+                      <span className="text-xs text-secondary font-semibold">
                         {formatSeconds(evt.duration_seconds)}
                       </span>
                     </span>
                     {evt.summary ? (
-                      <span className="block text-sm text-gray-700 dark:text-[#CBD5E1] m-0 line-clamp-2">{summaryPreview(evt.summary)}</span>
+                      <span className="block text-sm text-gray-700 dark:text-slate-300 m-0 line-clamp-2">{summaryPreview(evt.summary)}</span>
                     ) : (
-                      <span className="block text-sm text-gray-400 dark:text-[#475569] m-0 italic">{noSummaryText}</span>
+                      <span className="block text-sm text-gray-400 dark:text-slate-500 m-0 italic">{noSummaryText}</span>
                     )}
                   </button>
                   </li>
@@ -225,7 +225,7 @@ export default function StudentClassReview() {
           <div className="text-center">
             <button
               onClick={handleDownload}
-              className="px-6 py-2.5 rounded-lg bg-[#4A90D9] text-white font-semibold text-sm hover:bg-[#3A7BC8] transition-colors"
+              className="px-6 py-2.5 rounded-lg bg-secondary text-white font-semibold text-sm hover:bg-secondary/90 transition-colors shadow-sm"
             >
               Baixar Resumo Completo
             </button>
@@ -237,9 +237,9 @@ export default function StudentClassReview() {
       {sidePanel && (
         <>
           <div className="fixed inset-0 bg-black/30 z-[999]" onClick={() => setSidePanel(null)} />
-          <Dialog titleId="summary-panel-title" onClose={() => setSidePanel(null)} className="fixed top-0 right-0 w-[400px] h-full bg-white dark:bg-[#1E293B] border-l border-gray-200 dark:border-[#334155] shadow-[-4px_0_20px_rgba(0,0,0,0.2)] z-[1000] flex flex-col">
-            <div className="p-4 border-b border-gray-200 dark:border-[#334155] flex justify-between items-center">
-              <h3 id="summary-panel-title" className="text-base font-semibold m-0 text-gray-900 dark:text-[#F1F5F9]">
+          <Dialog titleId="summary-panel-title" onClose={() => setSidePanel(null)} className="fixed top-0 right-0 w-[400px] h-full bg-white dark:bg-surface-dark border-l border-border-light dark:border-border-dark shadow-md z-[1000] flex flex-col">
+            <div className="p-4 border-b border-border-light dark:border-border-dark flex justify-between items-center">
+              <h3 id="summary-panel-title" className="text-base font-semibold m-0 text-gray-900 dark:text-text-primary-dark">
                 <span className="sr-only">Resumo de </span>
                 {sidePanel.started_at ? new Date(sidePanel.started_at).toLocaleTimeString('pt-BR') : ''}
                 {' — '}
@@ -249,18 +249,18 @@ export default function StudentClassReview() {
                 type="button"
                 aria-label="Fechar resumo"
                 onClick={() => setSidePanel(null)}
-                className="bg-transparent border-none text-xl text-gray-500 dark:text-[#64748B] cursor-pointer hover:text-gray-900 dark:hover:text-white"
+                className="bg-transparent border-none text-xl text-gray-500 dark:text-text-muted-dark cursor-pointer hover:text-gray-900 dark:hover:text-white"
               >
                 &times;
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
               {sidePanel.summary ? (
-                <SummaryText text={sidePanel.summary} className="text-sm leading-relaxed text-gray-900 dark:text-[#F1F5F9]" />
+                <SummaryText text={sidePanel.summary} className="text-sm leading-relaxed text-gray-900 dark:text-text-primary-dark" />
               ) : (
-                <p className="text-sm text-gray-400 dark:text-[#475569] italic">{noSummaryText}</p>
+                <p className="text-sm text-gray-400 dark:text-slate-500 italic">{noSummaryText}</p>
               )}
-              <p className="text-xs text-gray-500 dark:text-[#64748B] mt-2 italic">Este conteúdo foi gerado por IA.</p>
+              <p className="text-xs text-gray-500 dark:text-text-muted-dark mt-2 italic">Este conteúdo foi gerado por IA.</p>
               <button
                 onClick={() => {
                   const blob = new Blob([`Resumo:\n${sidePanel.summary || ''}`], { type: 'text/plain;charset=utf-8' });
@@ -271,7 +271,7 @@ export default function StudentClassReview() {
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
-                className="w-full mt-4 py-2 rounded-lg bg-[#4A90D9] text-white text-sm font-semibold hover:bg-[#3A7BC8] transition-colors"
+                className="w-full mt-4 py-2 rounded-lg bg-secondary text-white text-sm font-semibold hover:bg-secondary/90 transition-colors shadow-sm"
               >
                 Baixar este resumo
               </button>
