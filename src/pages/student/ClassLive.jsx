@@ -7,13 +7,7 @@ import AttentionMonitor from '../../components/AttentionMonitor';
 import OpenTooLongNotice from '../../components/OpenTooLongNotice';
 import { useElapsed } from '../../hooks/useElapsed';
 import { formatDuration } from '../../lib/duration';
-
-const MODE_LABELS = {
-  full_attention: 'Atenção Total',
-  activity: 'Atividade',
-  exam: 'Prova',
-  break: 'Intervalo',
-};
+import { MODE_LABELS } from '../../lib/labels';
 
 export default function StudentClassLive() {
   const { id } = useParams();

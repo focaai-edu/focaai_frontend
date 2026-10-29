@@ -4,13 +4,19 @@
  * Receives video frames, computes head pose + EAR, posts back attention state.
  *
  * Messages FROM main thread:
- *   { type: 'init', thresholds: {...} }
+ *   { type: 'init' }
  *   { type: 'frame', imageBitmap: ImageBitmap, timestamp: number }
- *   { type: 'set_thresholds', thresholds: {...} }
+ *
+ * The attentive/distracted decision and the per-mode limits (RF03) live only in
+ * src/lib/attentionAlgo.js (useAttention). computeHeadPose/computeEAR below are a
+ * copy of the ones there: a classic worker can't import ES modules, and MediaPipe's
+ * loader needs importScripts (unavailable in module workers). A unit test locks
+ * both copies to the same results (#8 CA13, #35).
  *
  * Messages TO main thread:
  *   { type: 'ready' }
  *   { type: 'pose', yaw, pitch, roll, ear, landmarkBuffer, timestamp }
+ *   { type: 'no_face', timestamp }
  *   { type: 'error', message: string }
  */
 
@@ -18,12 +24,8 @@
 
 let faceLandmarker = null;
 let wasmLoaded = false;
-let thresholds = {
-  full_attention: { yaw: 25, pitch_up: 20, pitch_down: 15, roll: 30, ear: 0.2 },
-  activity:       { yaw: 25, pitch_up: 25, pitch_down: null, roll: 35, ear: 0.18 },
-  exam:           { yaw: 20, pitch_up: 20, pitch_down: null, roll: 25, ear: 0.22 },
-  break:          null
-};
+// Single MediaPipe version, loaded from the CDN at runtime (#35).
+const TASKS_VISION = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18';
 
 // Head pose computation from MediaPipe facial transformation matrix.
 // Takes the 16-element column-major Float32Array from
@@ -34,9 +36,8 @@ function computeHeadPose(m) {
   if (!m || m.length < 16) return { yaw: 0, pitch: 0, roll: 0 };
 
   // Column-major: element[row][col] = m[col*4 + row]
-  const m00 = m[0],  m10 = m[1],  m20 = m[2];
-  const m01 = m[4],  m11 = m[5],  m21 = m[6];
-  const m02 = m[8],  m12 = m[9],  m22 = m[10];
+  const m00 = m[0], m10 = m[1], m20 = m[2];
+  const m21 = m[6], m22 = m[10];
 
   const RAD2DEG = 180 / Math.PI;
 
@@ -91,19 +92,12 @@ self.onmessage = async function(event) {
 
   switch (type) {
     case 'init': {
-      const { thresholds: newThresholds } = event.data;
-      if (newThresholds) thresholds = { ...thresholds, ...newThresholds };
-
       try {
         // Dynamic import of MediaPipe tasks-vision bundle (not the /wasm folder)
-        const { FilesetResolver, FaceLandmarker } = await import(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs'
-        );
+        const { FilesetResolver, FaceLandmarker } = await import(`${TASKS_VISION}/vision_bundle.mjs`);
 
         // forVisionTasks receives the WASM base directory path
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
-        );
+        const vision = await FilesetResolver.forVisionTasks(`${TASKS_VISION}/wasm`);
 
         faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
@@ -120,14 +114,6 @@ self.onmessage = async function(event) {
         self.postMessage({ type: 'ready' });
       } catch (err) {
         self.postMessage({ type: 'error', message: 'Failed to load MediaPipe: ' + err.message });
-      }
-      break;
-    }
-
-    case 'set_thresholds': {
-      if (event.data.thresholds) {
-        // Merge custom per-student thresholds
-        Object.assign(thresholds, event.data.thresholds);
       }
       break;
     }
@@ -183,7 +169,7 @@ self.onmessage = async function(event) {
         imageBitmap.close();
       } catch (err) {
         self.postMessage({ type: 'error', message: 'Frame processing error: ' + err.message });
-        try { imageBitmap.close(); } catch {}
+        try { imageBitmap.close(); } catch { /* already closed or detached: nothing to free */ }
       }
       break;
     }

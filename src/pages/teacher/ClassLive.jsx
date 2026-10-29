@@ -8,6 +8,7 @@ import { useElapsed } from '../../hooks/useElapsed';
 import { useLiveClassExitGuard } from '../../hooks/useLiveClassExitGuard';
 import { useAudioChunks } from '../../hooks/useAudioChunks';
 import { formatDuration } from '../../lib/duration';
+import { MODE_LABELS } from '../../lib/labels';
 
 export default function TeacherClassLive() {
   const { id } = useParams();
@@ -26,12 +27,7 @@ export default function TeacherClassLive() {
   const [isLive, setIsLive] = useState(false);
   const { allowLeave, dialog: leaveDialog } = useLiveClassExitGuard({ classId, active: isLive });
 
-  const modes = [
-    { key: 'full_attention', label: 'Atenção Total' },
-    { key: 'activity', label: 'Atividade' },
-    { key: 'exam', label: 'Prova' },
-    { key: 'break', label: 'Intervalo' },
-  ];
+  const modes = Object.entries(MODE_LABELS).map(([key, label]) => ({ key, label }));
 
   // ---- Data loading ----
   useEffect(() => {

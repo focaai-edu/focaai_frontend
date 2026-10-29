@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { MODE_THRESHOLDS, MODE_LABELS, pctColor } from '../../lib/attentionAlgo';
 import api from '../../services/api';
+import { useLatestRequest } from '../../hooks/useLatestRequest';
 
 // ── Parameter definitions ─────────────────────────────────────────────────────
 
@@ -159,12 +160,16 @@ export default function RoomCameraTest() {
 
   // ── Analyze ───────────────────────────────────────────────────────────────
 
+  const beginRequest = useLatestRequest();
   const analyze = useCallback(async (b64Override, modeOverride, paramsOverride) => {
     const frame_base64    = b64Override    ?? pendingB64Ref.current;
     const monitoring_mode = modeOverride   ?? mode;
     const effectiveParams = paramsOverride ?? paramsRef.current;
     if (!frame_base64) return;
 
+    // Só a análise mais nova é desenhada: um ajuste rápido de parâmetro não é
+    // sobrescrito por uma resposta antiga que chegou depois (#35, F23).
+    const req = beginRequest();
     setAnalyzing(true);
     setError('');
     const t0 = performance.now();
@@ -174,6 +179,7 @@ export default function RoomCameraTest() {
         monitoring_mode,
         params: effectiveParams,
       });
+      if (!req.isLatest()) return;
       const { faces: fl = [], aggregate: agg = {}, img_w: W, img_h: H } = res.data;
       setElapsed(Math.round(performance.now() - t0));
       setFaces(fl);
@@ -184,11 +190,11 @@ export default function RoomCameraTest() {
       );
       if (W && H) drawBoxes(fl, W, H);
     } catch (e) {
-      setError(e.response?.data?.error || e.message || 'Erro ao analisar.');
+      if (req.isLatest()) setError(e.response?.data?.error || e.message || 'Erro ao analisar.');
     } finally {
-      setAnalyzing(false);
+      if (req.isLatest()) setAnalyzing(false);
     }
-  }, [mode, drawBoxes]);
+  }, [mode, drawBoxes, beginRequest]);
 
   // ── Param update with debounced re-analyze ────────────────────────────────
 
@@ -239,6 +245,7 @@ export default function RoomCameraTest() {
     if (pendingB64Ref.current) analyze(pendingB64Ref.current, m, next);
   };
 
+  // Limiares do modo: decidem se o painel mostra "pitch p/ baixo → permitido".
   const t = MODE_THRESHOLDS[mode];
   const roomPayload = aggregate?.total > 0
     ? { class_id: '<id_da_aula>', total_faces: aggregate.total, attentive: aggregate.attentive, distracted: aggregate.distracted, attention_pct: aggregate.pct, monitoring_mode: mode }

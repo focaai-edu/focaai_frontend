@@ -10,8 +10,8 @@ describe('AttentionIndicator', () => {
     expect(screen.getByText('Sem câmera')).toBeTruthy();
   });
 
-  it('status desconhecido cai em "Desconectado"', () => {
+  it('status desconhecido cai em "Fora da aula"', () => {
     render(<AttentionIndicator status="xyz" />);
-    expect(screen.getByText('Desconectado')).toBeTruthy();
+    expect(screen.getByText('Fora da aula')).toBeTruthy();
   });
 });

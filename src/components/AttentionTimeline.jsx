@@ -1,4 +1,5 @@
 import { formatSeconds } from '../lib/duration';
+import { STATUS_LABELS } from '../lib/labels';
 
 const STATUS_COLORS = {
   attentive: '#22C55E',
@@ -7,15 +8,6 @@ const STATUS_COLORS = {
   disconnected: '#EF4444',
   absent: '#1F2937',
   break: '#9CA3AF',
-};
-
-const STATUS_LABELS = {
-  attentive: 'Atento',
-  distracted: 'Distraído',
-  no_camera: 'Sem câmera',
-  disconnected: 'Fora',
-  absent: 'Ausente',
-  break: 'Intervalo',
 };
 
 /**

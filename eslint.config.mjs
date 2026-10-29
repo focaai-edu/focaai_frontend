@@ -24,6 +24,11 @@ export default [
     },
   },
   {
+    // Web Worker clássico servido de public/ (o lint também cobre, #35).
+    files: ['public/**/*.js'],
+    languageOptions: { sourceType: 'script', globals: { ...globals.worker } },
+  },
+  {
     // Testes rodam no Node (Vitest): podem usar process, fs etc.
     files: ['**/*.test.{js,jsx}', 'src/test/**/*.js'],
     languageOptions: { globals: { ...globals.node } },

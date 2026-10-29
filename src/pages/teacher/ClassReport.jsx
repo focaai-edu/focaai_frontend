@@ -7,18 +7,12 @@ import {
 import Layout from '../../components/Layout';
 import TranscriptPanel from '../../components/TranscriptPanel';
 import api from '../../services/api';
+import { MODE_LABELS } from '../../lib/labels';
 import LoadError from '../../components/LoadError';
 import { summaryPreview } from '../../components/SummaryText';
 import { useSummaryRefresh } from '../../hooks/useSummaryRefresh';
 import { isLoadFailure } from '../../lib/loadError';
 import { formatSeconds } from '../../lib/duration';
-
-const MODE_PT = {
-  full_attention: 'Atenção Total',
-  activity: 'Atividade',
-  exam: 'Prova',
-  break: 'Intervalo',
-};
 
 // Cor de atenção por faixa de % (verde / âmbar / vermelho).
 const attColor = (pct) => (pct >= 70 ? '#22C55E' : pct >= 40 ? '#F59E0B' : '#EF4444');
@@ -105,7 +99,7 @@ export default function TeacherClassReport() {
   const modeMarkers = report.started_at
     ? (overview.monitoring_modes_used || []).slice(1).map(m => ({
         minute: Math.round((new Date(m.started_at) - new Date(report.started_at)) / 60000),
-        label: MODE_PT[m.mode] || m.mode,
+        label: MODE_LABELS[m.mode] || m.mode,
       })).filter(m => m.minute > 0)
     : [];
 
@@ -229,7 +223,7 @@ export default function TeacherClassReport() {
           <div className="flex gap-2 flex-wrap">
             {overview.monitoring_modes_used.map((m, i) => (
               <span key={i} className="px-3 py-1 rounded bg-[#E8F0FA] dark:bg-[#1B4F81]/30 text-[#1B4F81] dark:text-[#7DB8F0] text-xs font-semibold">
-                {m.mode === 'full_attention' ? 'Atenção Total' : m.mode === 'activity' ? 'Atividade' : m.mode === 'exam' ? 'Prova' : 'Intervalo'}
+                {MODE_LABELS[m.mode] || m.mode}
               </span>
             ))}
           </div>
