@@ -75,9 +75,9 @@ describe('Revisão da aula (#5)', () => {
     expect(dialog.textContent).toContain('<b>cru</b>');
   });
 
-  it('CA9 (F22): reproduz o casamento por string — "+00:00" num endpoint e "Z" no outro ainda mostram o resumo', async () => {
+  it('CA9 (F22): fusos formatados diferentes ("+00:00" × "Z") não atrapalham — o casamento é pelo id (#40)', async () => {
     respond({
-      report: studentData([{ started_at: '2026-10-29T13:05:00Z', ended_at: '2026-10-29T13:06:00Z', duration_seconds: 60, summary: 'Resumo certo' }]),
+      report: studentData([{ attention_event_id: 41, started_at: '2026-10-29T13:05:00Z', ended_at: '2026-10-29T13:06:00Z', duration_seconds: 60, summary: 'Resumo certo' }]),
       events: [{ id: 41, status: 'distracted', started_at: '2026-10-29T13:05:00+00:00', ended_at: '2026-10-29T13:06:00+00:00' }],
     });
     await renderReview();
@@ -93,6 +93,30 @@ describe('Revisão da aula (#5)', () => {
     await renderReview();
     fireEvent.click(document.querySelector('[data-status="distracted"]'));
     expect(screen.getByRole('dialog').textContent).toContain('Pelo id');
+  });
+
+  it('#40 CA6 (erro): distração de outro evento não empresta o resumo, mesmo com o mesmo instante', async () => {
+    respond({
+      report: studentData([{ attention_event_id: 99, started_at: iso(5), ended_at: iso(6), duration_seconds: 60, summary: 'Resumo de outro evento' }]),
+      events: [{ id: 41, status: 'distracted', started_at: iso(5), ended_at: iso(6) }],
+    });
+    vi.setSystemTime(Date.parse(CLASS.ended_at) + 10 * 60000);
+    await renderReview();
+    fireEvent.click(document.querySelector('[data-status="distracted"]'));
+    const text = screen.getByRole('dialog').textContent;
+    expect(text).not.toContain('Resumo de outro evento');
+    expect(text).toContain('Resumo não disponível para este trecho.');
+  });
+
+  it('#40 CA5: sem attention_event_id não há casamento por instante', async () => {
+    respond({
+      report: studentData([{ started_at: iso(5), ended_at: iso(6), duration_seconds: 60, summary: 'Só pelo instante' }]),
+      events: [{ id: 41, status: 'distracted', started_at: iso(5), ended_at: iso(6) }],
+    });
+    vi.setSystemTime(Date.parse(CLASS.ended_at) + 10 * 60000);
+    await renderReview();
+    fireEvent.click(document.querySelector('[data-status="distracted"]'));
+    expect(screen.getByRole('dialog').textContent).not.toContain('Só pelo instante');
   });
 
   it('CA6: a linha do tempo usa o início e o fim da aula e mostra a lacuna como "Fora"', async () => {
