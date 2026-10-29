@@ -5,9 +5,9 @@ const STATUS_COLORS = {
   attentive: 'var(--color-attentive)',
   distracted: 'var(--color-distracted)',
   no_camera: 'var(--color-no-camera)',
-  disconnected: 'var(--color-danger)',
-  absent: 'var(--color-surface-dark)',
-  break: 'var(--color-disconnected)',
+  disconnected: 'var(--color-disconnected)',
+  absent: 'var(--color-absent)',
+  break: 'var(--color-break)',
 };
 
 /**

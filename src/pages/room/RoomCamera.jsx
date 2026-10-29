@@ -6,6 +6,7 @@ import { useLiveClassExitGuard } from '../../hooks/useLiveClassExitGuard';
 import { useAudioChunks } from '../../hooks/useAudioChunks';
 import Dialog from '../../components/Dialog';
 import { MODE_LABELS, pctColor } from '../../lib/attentionAlgo';
+import { STATUS_COLORS } from '../../lib/colors';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -339,7 +340,7 @@ export default function RoomCamera() {
     ctx.clearRect(0, 0, cW, cH);
 
     faceBoxes.forEach(({ x, y, w, h, distracted: dist }) => {
-      const color = dist ? '#F59E0B' : '#22C55E';
+      const color = dist ? STATUS_COLORS.distracted : STATUS_COLORS.attentive;
       ctx.save();
       ctx.shadowColor = color; ctx.shadowBlur = 14;
       ctx.strokeStyle = color; ctx.lineWidth = 4;

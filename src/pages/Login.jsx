@@ -134,7 +134,7 @@ export default function Login() {
   };
 
   const inputClass =
-    'w-full px-3.5 py-2.5 rounded-lg border border-slate-700 bg-slate-800/80 text-text-primary-dark placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-secondary/50 focus:border-secondary transition-colors text-sm';
+    'w-full px-3.5 py-2.5 rounded-lg border border-slate-700 bg-slate-800/80 text-text-primary-dark placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-secondary/50 focus:border-secondary transition-colors text-sm';
 
   return (
     <AuthLayout left={<LoginMarketing />} tagline="Cada momento importa. Inclusive os que você perdeu.">

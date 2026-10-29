@@ -31,9 +31,9 @@ describe('Design Tokens e Direção A (Foco Total) (#17 / V06, V16, F36)', () =>
     expect(cssContent).toMatch(/--color-surface-dark:\s*#1E293B/i);
     expect(cssContent).toMatch(/--color-border-dark:\s*#334155/i);
     expect(cssContent).toMatch(/--color-attentive:\s*#22C55E/i);
-    expect(cssContent).toMatch(/--color-distracted:\s*#4A90D9/i);
-    expect(cssContent).toMatch(/--color-no-camera:\s*#F59E0B/i);
-    expect(cssContent).toMatch(/--color-disconnected:\s*#9CA3AF/i);
+    expect(cssContent).toMatch(/--color-distracted:\s*#F59E0B/i);
+    expect(cssContent).toMatch(/--color-no-camera:\s*#94A3B8/i);
+    expect(cssContent).toMatch(/--color-disconnected:\s*#EF4444/i);
     expect(cssContent).toMatch(/Inter/i);
   });
 
