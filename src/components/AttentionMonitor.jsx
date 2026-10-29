@@ -7,7 +7,7 @@ import AttentionIndicator from './AttentionIndicator';
 const NO_CAMERA_TEXT = 'Não foi possível acessar a câmera. Seu professor verá você como sem câmera.';
 const DETECTOR_ERROR_TEXT = 'Não foi possível iniciar o detector de atenção.';
 
-export default function AttentionMonitor({ classId, studentId, monitoringMode = 'full_attention' }) {
+export default function AttentionMonitor({ classId, monitoringMode = 'full_attention' }) {
   const workerRef = useRef(null);
   const [workerReady, setWorkerReady] = useState(false);
   const [workerError, setWorkerError] = useState(null);
@@ -22,7 +22,7 @@ export default function AttentionMonitor({ classId, studentId, monitoringMode = 
 
   const { source, error: cameraError, videoRef, startWebcam, stopWebcam } = useCamera();
   const { status, processPose, processNoFace, resetNoFace, markNoCamera } = useAttention(
-    classId, studentId, monitoringMode, source || 'webcam'
+    classId, monitoringMode, source || 'webcam'
   );
   // O onmessage do worker é registrado uma vez; ele chama os handlers do render
   // mais recente por esta ref, senão a decisão fica presa no modo inicial (#8, F01).
