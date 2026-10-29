@@ -1,34 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
-
-const THEME_KEY = 'foca-theme-preference';
+import { initialTheme, applyTheme, saveTheme } from '../lib/theme';
 
 export function useTheme() {
-  const [theme, setThemeState] = useState(() => {
-    // Check localStorage first, then system preference
-    const stored = localStorage.getItem(THEME_KEY);
-    if (stored === 'dark' || stored === 'light') return stored;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  });
+  const [theme, setThemeState] = useState(initialTheme);
 
   useEffect(() => {
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-    localStorage.setItem(THEME_KEY, theme);
+    applyTheme(theme);
   }, [theme]);
 
-  const toggleTheme = useCallback(() => {
-    setThemeState(prev => (prev === 'dark' ? 'light' : 'dark'));
-  }, []);
-
+  // Só a escolha explícita é gravada; sem ela, o tema segue o sistema (#18).
   const setTheme = useCallback((newTheme) => {
     if (newTheme === 'dark' || newTheme === 'light') {
+      saveTheme(newTheme);
       setThemeState(newTheme);
     }
   }, []);
 
-  return { theme, toggleTheme, setTheme };
+  return { theme, setTheme };
 }

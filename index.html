@@ -11,6 +11,18 @@
     />
     <link rel="icon" type="image/png" href="/cerebro.png" />
     <title>foca.ai</title>
+    <script>
+      // Tema antes do primeiro paint, sem clarão branco (#18). Mesma regra de
+      // initialTheme() em src/lib/theme.js (theme.test.js trava a paridade).
+      (function () {
+        var theme = null;
+        try { theme = localStorage.getItem('foca-theme-preference'); } catch (e) { /* storage bloqueado */ }
+        if (theme !== 'dark' && theme !== 'light') {
+          theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        if (theme === 'dark') document.documentElement.classList.add('dark');
+      })();
+    </script>
   </head>
   <body class="font-sans antialiased">
     <div id="root"></div>

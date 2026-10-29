@@ -9,9 +9,9 @@ import { isLoadFailure } from '../../lib/loadError';
 
 const STATUS_LABELS = { live: 'Ao Vivo', scheduled: 'Agendada', ended: 'Encerrada' };
 const STATUS_COLORS = {
-  live: 'bg-green-100 text-green-700',
-  scheduled: 'bg-amber-100 text-amber-700',
-  ended: 'bg-gray-100 text-gray-500',
+  live: 'bg-green-100 text-green-700 dark:bg-success/15 dark:text-success',
+  scheduled: 'bg-amber-100 text-amber-700 dark:bg-warning/15 dark:text-warning',
+  ended: 'bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-300',
 };
 
 function formatDate(iso) {
@@ -465,7 +465,7 @@ export default function TeacherDashboard() {
                     </button>
                     <button
                       onClick={() => handleEnd(cls.id)}
-                      className="px-3 py-1.5 rounded-lg border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50 transition-colors bg-transparent cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg border border-red-200 dark:border-danger/40 text-red-500 text-xs font-semibold hover:bg-red-50 dark:hover:bg-danger/10 transition-colors bg-transparent cursor-pointer"
                     >
                       Encerrar
                     </button>
