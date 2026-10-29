@@ -54,7 +54,7 @@ export default function StudentGrid({ students = [], monitoringMode = 'full_atte
               </p>
               <span className="text-xs font-semibold" style={{ color }}>
                 {status === 'connected' ? 'Conectado' :
-                 status === 'disconnected' ? 'Desconectado' :
+                 status === 'disconnected' ? 'Fora da aula' :
                  status === 'attentive' ? 'Atento' :
                  status === 'distracted' ? 'Desatento' :
                  status === 'no_camera' ? 'Sem câmera' : status}

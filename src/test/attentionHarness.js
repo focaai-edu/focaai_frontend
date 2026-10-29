@@ -56,7 +56,39 @@ export function createFakeStream() {
   return { track, getTracks: () => [track], getVideoTracks: () => [track] };
 }
 
+// MediaRecorder falso: cada stop() entrega um trecho de `size` bytes e chama onstop.
+export class FakeMediaRecorder {
+  static instances = [];
+  static size = 1000;
+  static isTypeSupported() { return true; }
+  constructor(stream, options) {
+    this.stream = stream;
+    this.options = options;
+    this.state = 'inactive';
+    FakeMediaRecorder.instances.push(this);
+  }
+  start() { this.state = 'recording'; }
+  stop() {
+    if (this.state === 'inactive') return;
+    this.state = 'inactive';
+    this.ondataavailable?.({ data: new Blob(['x'.repeat(FakeMediaRecorder.size)], { type: 'audio/webm' }) });
+    this.onstop?.();
+  }
+}
+
+// FileReader síncrono: o base64 do trecho é sempre "QUJD".
+class FakeFileReader {
+  readAsDataURL() {
+    this.result = 'data:audio/webm;base64,QUJD';
+    this.onloadend?.();
+  }
+}
+
 export function setupEnvironment() {
+  FakeMediaRecorder.instances = [];
+  FakeMediaRecorder.size = 1000;
+  vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
+  vi.stubGlobal('FileReader', FakeFileReader);
   FakeWorker.instances = [];
   vi.stubGlobal('Worker', FakeWorker);
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'requestAnimationFrame', 'cancelAnimationFrame'] });

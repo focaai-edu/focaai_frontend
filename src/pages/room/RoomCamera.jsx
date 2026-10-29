@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router';
 import socket from '../../services/socket';
 import api from '../../services/api';
+import { useLiveClassExitGuard } from '../../hooks/useLiveClassExitGuard';
 import { MODE_LABELS, pctColor } from '../../lib/attentionAlgo';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -147,6 +149,11 @@ export default function RoomCamera() {
   const [selectedClassId, setSelectedClassId]   = useState(null);
   const [liveClass, setLiveClass]               = useState(null);
   const [connected, setConnected]               = useState(socket.connected);
+  const [roomNotice, setRoomNotice]             = useState('');
+  const navigate = useNavigate();
+  // Com uma aula ao vivo selecionada, o professor está na sala dela (RN25):
+  // sair pergunta se é para encerrar a aula também (#9, CA7).
+  const { requestLeave, dialog: leaveDialog } = useLiveClassExitGuard({ classId: selectedClassId, active: Boolean(liveClass) });
 
   // Monitoring
   const [monitoring, setMonitoring] = useState(false);
@@ -202,7 +209,7 @@ export default function RoomCamera() {
 
   // ── Load live classes ─────────────────────────────────────────────────────
 
-  useEffect(() => {
+  const loadLiveClasses = useCallback(() => {
     api.get('/api/classes', { params: { status: 'live' } })
       .then(res => {
         const list = res.data.classes || [];
@@ -211,6 +218,8 @@ export default function RoomCamera() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => { loadLiveClasses(); }, [loadLiveClasses]);
 
   useEffect(() => { selectedClassIdRef.current = selectedClassId; }, [selectedClassId]);
   useEffect(() => {
@@ -240,7 +249,8 @@ export default function RoomCamera() {
   useEffect(() => { isWebcamRef.current = isWebcam; }, [isWebcam]);
 
   useEffect(() => {
-    if (!isWebcam) {
+    // Sem aula ao vivo selecionada não há o que monitorar: a câmera fica desligada (#9, CA9).
+    if (!isWebcam || !selectedClassId) {
       webcamStreamRef.current?.getTracks().forEach(t => t.stop());
       webcamStreamRef.current = null;
       return;
@@ -269,7 +279,7 @@ export default function RoomCamera() {
       webcamStreamRef.current?.getTracks().forEach(t => t.stop());
       webcamStreamRef.current = null;
     };
-  }, [isWebcam, activeCameraId]);
+  }, [isWebcam, activeCameraId, selectedClassId]);
 
   // ── Transcription ─────────────────────────────────────────────────────────
 
@@ -481,12 +491,28 @@ export default function RoomCamera() {
     setMonitoring(true);
   };
 
-  const handleCloseRoom = () => {
+  const handleCloseRoom = useCallback(() => {
     if (recorderRef.current) { recorderRef.current.stop(); recorderRef.current = null; }
     if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
     setMicActive(false);
     setMonitoring(false);
-  };
+  }, []);
+
+  // Aula encerrada em outra aba (dashboard) ou pelo servidor: fecha a sala,
+  // desliga câmera e microfone e recarrega as aulas ao vivo (#9, F12).
+  useEffect(() => {
+    const onClassEnded = (data) => {
+      if (data.class_id !== selectedClassIdRef.current) return;
+      handleCloseRoom();
+      setRoomNotice('A aula foi encerrada.');
+      setSelectedClassId(null);
+      setLiveClass(null);
+      setAvailableClasses([]);
+      loadLiveClasses();
+    };
+    socket.on('class_ended', onClassEnded);
+    return () => socket.off('class_ended', onClassEnded);
+  }, [handleCloseRoom, loadLiveClasses]);
 
   // ── Camera CRUD ───────────────────────────────────────────────────────────
 
@@ -515,6 +541,13 @@ export default function RoomCamera() {
       {/* Header */}
       <header className="px-5 py-3 bg-[#1B4F81] flex items-center justify-between flex-wrap gap-3 flex-shrink-0">
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigate('/teacher/dashboard')}
+            className="px-3 py-1.5 rounded-lg border border-white/30 bg-white/10 text-white text-xs hover:bg-white/20 transition-colors"
+          >
+            ← Painel
+          </button>
           <h1 className="text-base font-semibold m-0">Câmera da Sala</h1>
           {liveClass && (
             <span className="text-xs bg-white/10 px-2 py-0.5 rounded-md">{liveClass.title}</span>
@@ -553,7 +586,7 @@ export default function RoomCamera() {
             </button>
           ) : (
             <button
-              onClick={handleCloseRoom}
+              onClick={() => requestLeave(handleCloseRoom)}
               className="px-4 py-2 rounded-lg bg-red-500 text-white font-semibold text-sm hover:bg-red-600 transition-colors"
             >
               Fechar Sala
@@ -561,6 +594,12 @@ export default function RoomCamera() {
           )}
         </div>
       </header>
+
+      {roomNotice && (
+        <div role="status" className="px-5 py-2 bg-[#334155] text-[#F1F5F9] text-xs text-center flex-shrink-0">
+          {roomNotice}
+        </div>
+      )}
 
       {availableClasses.length === 0 && (
         <div className="px-5 py-2 bg-amber-900/40 text-amber-300 text-xs text-center flex-shrink-0">
@@ -833,6 +872,7 @@ export default function RoomCamera() {
           onClose={() => { setShowForm(false); setEditingCam(null); }}
         />
       )}
+      {leaveDialog}
     </div>
   );
 }

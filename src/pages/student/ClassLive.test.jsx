@@ -156,3 +156,55 @@ describe('Aula ao vivo do aluno — contrato de identidade (#7 CA6)', () => {
     expect(update.student_id).toBe(3);
   });
 });
+
+describe('Aula ao vivo do aluno — professor desconectado (#9 CA4–CA6)', () => {
+  const away = (classId = 7) => ({ class_id: classId, connected: false, changed_at: '2026-10-29T11:58:00Z' });
+  const back = (classId = 7) => ({ class_id: classId, connected: true, changed_at: '2026-10-29T11:59:00Z' });
+
+  it('CA4: teacher_presence false mostra o aviso (role=status) até chegar true', async () => {
+    await renderLive();
+    expect(screen.queryByText('Professor desconectado')).toBeNull();
+    socket.current.trigger('teacher_presence', away());
+    expect(screen.getByText('Professor desconectado').closest('[role="status"]')).toBeTruthy();
+    socket.current.trigger('teacher_presence', back());
+    expect(screen.queryByText('Professor desconectado')).toBeNull();
+  });
+
+  it('CA5: class_state com teacher_presence.connected false já mostra o aviso', async () => {
+    await renderLive();
+    socket.current.trigger('class_state', { class: LIVE, teacher_presence: away() });
+    expect(screen.getByText('Professor desconectado')).toBeTruthy();
+    socket.current.trigger('class_state', { class: LIVE, teacher_presence: back() });
+    expect(screen.queryByText('Professor desconectado')).toBeNull();
+  });
+
+  it('CA5: class_state sem teacher_presence (backend antigo) não mostra o aviso', async () => {
+    await renderLive();
+    socket.current.trigger('class_state', { class: LIVE });
+    expect(screen.queryByText('Professor desconectado')).toBeNull();
+  });
+
+  it('CA6 (erro): teacher_presence de outra aula não muda o aviso', async () => {
+    await renderLive();
+    socket.current.trigger('teacher_presence', away(99));
+    expect(screen.queryByText('Professor desconectado')).toBeNull();
+    socket.current.trigger('teacher_presence', away());
+    socket.current.trigger('teacher_presence', back(99));
+    expect(screen.getByText('Professor desconectado')).toBeTruthy();
+  });
+});
+
+describe('Aula ao vivo do aluno — duração (#9 CA14)', () => {
+  it('mostra a duração com o formatador único', async () => {
+    // started_at 11:50, agora 12:00 (setupEnvironment)
+    await renderLive();
+    expect(screen.getByText(/10 min · Atenção/)).toBeTruthy();
+  });
+
+  it('acima de 24 h, mostra a duração e o aviso de aula aberta', async () => {
+    api.get.mockResolvedValue({ data: { class: { ...LIVE, started_at: '2026-10-28T09:50:00Z' } } });
+    await renderLive();
+    expect(screen.getByText(/26 h 10 min/)).toBeTruthy();
+    expect(screen.getByText('Aula aberta há mais de 24 horas. Encerre-a se ela já terminou.')).toBeTruthy();
+  });
+});

@@ -4,6 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
 import socket from '../../services/socket';
 import AttentionMonitor from '../../components/AttentionMonitor';
+import OpenTooLongNotice from '../../components/OpenTooLongNotice';
+import { useElapsed } from '../../hooks/useElapsed';
+import { formatDuration } from '../../lib/duration';
 
 const MODE_LABELS = {
   full_attention: 'Atenção Total',
@@ -17,7 +20,8 @@ export default function StudentClassLive() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [cls, setCls] = useState(null);
-  const [elapsed, setElapsed] = useState(0);
+  // Presença do professor (RN25): false = ele caiu e a aula segue sem áudio (#9).
+  const [teacherAway, setTeacherAway] = useState(false);
   const [mode, setMode] = useState('full_attention');
   const [loading, setLoading] = useState(true);
   const [showDistraction, setShowDistraction] = useState(false);
@@ -67,6 +71,11 @@ export default function StudentClassLive() {
     socket.on('class_state', (data) => {
       setCls(prev => prev || data.class);
       setMode(data.class.monitoring_mode);
+      // Ao entrar ou reconectar, já recebe a ausência persistida (RN26).
+      if (data.teacher_presence) setTeacherAway(data.teacher_presence.connected === false);
+    });
+    socket.on('teacher_presence', (data) => {
+      if (data.class_id === classId) setTeacherAway(data.connected === false);
     });
     socket.on('monitoring_mode_changed', (data) => setMode(data.mode));
     socket.on('class_ended', () => navigate(`/student/classes/${classId}/review`));
@@ -87,29 +96,19 @@ export default function StudentClassLive() {
       socket.off('class_state'); socket.off('monitoring_mode_changed');
       socket.off('class_ended'); socket.off('attention_alert');
       socket.off('new_transcription');
+      socket.off('teacher_presence');
       socket.off('connect', onConnect);
       socket.off('error', checkStillLive);
     };
   }, [classId, navigate]);
 
-  useEffect(() => {
-    if (!cls?.started_at) return;
-    const started = new Date(cls.started_at).getTime();
-    const interval = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
-    return () => clearInterval(interval);
-  }, [cls?.started_at]);
+  const elapsed = useElapsed(cls?.started_at);
 
   useEffect(() => {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [transcriptions]);
-
-  const formatTime = (secs) => {
-    const t = Math.max(0, secs);
-    const m = Math.floor(t / 60), s = t % 60;
-    return `${m}m ${String(s).padStart(2, '0')}s`;
-  };
 
   if (loading) {
     return <div className="flex items-center justify-center min-h-screen bg-[#0F172A] text-white text-sm">Carregando aula...</div>;
@@ -122,7 +121,7 @@ export default function StudentClassLive() {
       <header className="flex-shrink-0 px-6 py-3 bg-[#1B4F81] flex justify-between items-center">
         <div>
           <h1 className="text-lg font-semibold m-0">{cls.title}</h1>
-          <span className="text-xs opacity-80">{formatTime(elapsed)} · {MODE_LABELS[mode] || mode}</span>
+          <span className="text-xs opacity-80">{formatDuration(elapsed)} · {MODE_LABELS[mode] || mode}</span>
         </div>
         <button
           onClick={() => { socket.emit('leave_class', { class_id: classId }); navigate('/student/dashboard'); }}
@@ -131,6 +130,14 @@ export default function StudentClassLive() {
           Sair
         </button>
       </header>
+
+      <OpenTooLongNotice elapsedSeconds={elapsed} />
+
+      {teacherAway && (
+        <div role="status" className="flex-shrink-0 px-6 py-2 bg-[#334155] text-[#F1F5F9] text-center text-sm font-medium">
+          Professor desconectado
+        </div>
+      )}
 
       {/* Distraction notice */}
       {showDistraction && (
