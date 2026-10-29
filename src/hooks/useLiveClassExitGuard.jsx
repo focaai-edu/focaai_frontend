@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useBlocker } from 'react-router';
 import api from '../services/api';
+import Dialog from '../components/Dialog';
 
 /**
  * Sair de uma aula ao vivo sem encerrar deixa a aula `live` sem áudio até o
@@ -76,10 +77,9 @@ export function useLiveClassExitGuard({ classId, active }) {
 
   const dialog = pending && (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="leave-live-class-title"
+      <Dialog
+        titleId="leave-live-class-title"
+        onClose={stay}
         className="w-full max-w-sm rounded-xl bg-white dark:bg-[#1E293B] p-6 text-gray-900 dark:text-[#F1F5F9]"
       >
         <p id="leave-live-class-title" className="m-0 mb-4 text-base font-semibold">
@@ -113,7 +113,7 @@ export function useLiveClassExitGuard({ classId, active }) {
             Continuar na aula
           </button>
         </div>
-      </div>
+      </Dialog>
     </div>
   );
 
