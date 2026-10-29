@@ -123,7 +123,7 @@ export default function StudentClassLive() {
   return (
     <div className="h-screen bg-[#0F172A] text-[#F1F5F9] flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="flex-shrink-0 px-6 py-3 bg-[#1B4F81] flex justify-between items-center">
+      <header className="flex-shrink-0 px-4 md:px-6 py-3 bg-[#1B4F81] flex justify-between items-center">
         <div>
           <h1 className="text-lg font-semibold m-0">{cls.title}</h1>
           <span className="text-xs opacity-80">{formatDuration(elapsed)} · {MODE_LABELS[mode] || mode}</span>
@@ -139,22 +139,22 @@ export default function StudentClassLive() {
       <OpenTooLongNotice elapsedSeconds={elapsed} />
 
       {teacherAway && (
-        <div role="status" className="flex-shrink-0 px-6 py-2 bg-[#334155] text-[#F1F5F9] text-center text-sm font-medium">
+        <div role="status" className="flex-shrink-0 px-4 md:px-6 py-2 bg-[#334155] text-[#F1F5F9] text-center text-sm font-medium">
           Professor desconectado
         </div>
       )}
 
       {/* Aviso de resumo pronto (RF13) */}
       {summaryNotice && (
-        <div role="status" className="flex-shrink-0 px-6 py-3 bg-[#4A90D9] text-white text-center text-sm font-medium motion-safe:animate-pulse">
+        <div role="status" className="flex-shrink-0 px-4 md:px-6 py-3 bg-[#4A90D9] text-white text-center text-sm font-medium motion-safe:animate-pulse">
           Você perdeu um trecho da aula — o resumo já está disponível na revisão.
         </div>
       )}
 
-      {/* Main two-column layout — min-h-0 lets flex children respect overflow */}
-      <div className="flex-1 flex overflow-hidden min-h-0">
+      {/* Main two-column layout — responsive stacking on mobile */}
+      <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden min-h-0">
         {/* Left: Camera + Attention Monitor */}
-        <div className="flex-1 flex flex-col items-center justify-center p-6 gap-3 overflow-y-auto">
+        <div className="w-full md:flex-1 flex flex-col items-center justify-center p-4 md:p-6 gap-3 overflow-y-visible md:overflow-y-auto flex-shrink-0 md:flex-shrink">
           <AttentionMonitor
             classId={classId}
             studentId={user.id}
@@ -162,8 +162,8 @@ export default function StudentClassLive() {
           />
         </div>
 
-        {/* Right: Transcription — fixed width, scrolls independently */}
-        <div className="w-[300px] flex flex-col border-l border-[#1E293B] bg-[#1E293B]">
+        {/* Right: Transcription — full width on mobile, fixed width on desktop */}
+        <div className="w-full md:w-[300px] flex flex-col border-t md:border-t-0 md:border-l border-[#1E293B] bg-[#1E293B] min-h-[300px] md:min-h-0">
           <h3 className="flex-shrink-0 text-sm font-semibold px-5 pt-5 pb-3 text-white border-b border-[#334155]">
             Transcrição ao vivo
           </h3>

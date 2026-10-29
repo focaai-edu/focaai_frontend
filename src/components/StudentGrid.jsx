@@ -33,7 +33,7 @@ export default function StudentGrid({ students = [], monitoringMode = 'full_atte
         </span>
       </div>
 
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
         {students.map(student => {
           const status = student.status || 'connected';
           const color = STATUS_COLORS[status] || '#9CA3AF';
