@@ -38,7 +38,7 @@ const NAV_ITEMS = {
   ],
 };
 
-export default function Sidebar({ role = 'student' }) {
+export default function Sidebar({ role = 'student', isOpen = false, onNavigate }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -51,9 +51,10 @@ export default function Sidebar({ role = 'student' }) {
   };
 
   const handleLogout = useCallback(async () => {
+    onNavigate?.();
     await logout();
     navigate('/login');
-  }, [logout, navigate]);
+  }, [logout, navigate, onNavigate]);
 
   const initials = user?.name
     ? user.name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
@@ -61,7 +62,9 @@ export default function Sidebar({ role = 'student' }) {
 
   return (
     <aside
-      className="w-[240px] min-h-screen flex flex-col fixed left-0 top-0 z-30"
+      className={`w-[240px] min-h-screen flex flex-col fixed left-0 top-0 z-50 transition-transform duration-200 ease-in-out md:translate-x-0 ${
+        isOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}
       style={{ background: 'radial-gradient(circle at top, #183b73, #07122f 70%)' }}
       role="navigation"
       aria-label="Navegação principal"
@@ -72,7 +75,11 @@ export default function Sidebar({ role = 'student' }) {
       <div className="relative z-10 flex flex-col flex-1 min-h-0">
       {/* Logo */}
       <div className="px-5 pt-6 pb-5">
-        <Link to={`/${role}/dashboard`} className="no-underline flex items-center gap-3">
+        <Link
+          to={`/${role}/dashboard`}
+          onClick={onNavigate}
+          className="no-underline flex items-center gap-3"
+        >
           <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
             <img src="/cerebro.png" alt="" className="w-5 h-5 brightness-0 invert" />
           </div>
@@ -99,6 +106,7 @@ export default function Sidebar({ role = 'student' }) {
               <li key={item.to}>
                 <Link
                   to={item.to}
+                  onClick={onNavigate}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-lg no-underline text-sm font-medium transition-all"
                   style={{
                     color: active ? '#FFFFFF' : 'rgba(255,255,255,0.65)',
