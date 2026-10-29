@@ -51,6 +51,7 @@ export default function AttentionMonitor({ classId, monitoringMode = 'full_atten
             break;
           case 'no_face':
             workerBusyRef.current = false;
+            landmarksRef.current = null;
             handlersRef.current.processNoFace();
             break;
           case 'error':
@@ -131,6 +132,7 @@ export default function AttentionMonitor({ classId, monitoringMode = 'full_atten
           error={cameraError ? NO_CAMERA_TEXT : null}
           landmarksRef={landmarksRef}
           poseRef={poseRef}
+          status={status}
         />
         {status !== 'disconnected' && (
           <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 rounded bg-black/60">

@@ -115,6 +115,8 @@ O relatório do professor segue a mesma regra de duração, prévia e recarga do
 
 **RF31 — Tema claro/escuro.** O tema vem da escolha gravada em `localStorage` (`foca-theme-preference`, `light`/`dark`); sem escolha válida (ou com storage bloqueado), segue `prefers-color-scheme` do sistema. Um script inline no `<head>` de `index.html` aplica a classe `dark` no `<html>` antes do primeiro paint, sem clarão branco; a regra é a mesma de `initialTheme()` em `src/lib/theme.js`. O rodapé da sidebar tem o seletor "Tema" (`ThemeToggle`) com dois botões, "Claro" (sol) e "Escuro" (lua), e `aria-pressed` no ativo: mostra o tema atual, não a ação. Só a escolha explícita é gravada. A 404 tem fundo `bg-dark` (#0F172A), card `surface-dark` (#1E293B), título branco e texto `slate-300` no escuro, margem de 16px no celular, e "Voltar ao início" leva direto ao painel do perfil (ou a `/login` sem sessão). Todo fundo claro (estado vazio, carregando, banner, badge, hover) traz a variante `dark:` correspondente (#18).
 
+**RF32 — Delimitação facial na tela ao vivo do aluno.** Na visualização da webcam do aluno (`CameraPreview.jsx`), a malha de landmarks faciais é substituída por uma caixa delimitadora retangular ao redor do rosto com cantos levemente arredondados, traço de 3 px e cor semântica unificada de `src/lib/colors.js` (`STATUS_COLORS`: verde para atento, âmbar para desatento, cinza para sem câmera). Uma etiqueta curta com o status ("Atento" ou "Desatento") é renderizada no topo da caixa (estilo `/room`). As coordenadas da caixa são calculadas por função pura (`src/lib/faceBox.js`) a partir dos limites min/max dos landmarks com margem de 10% e espelhamento horizontal correspondente ao espelho da webcam (`scale(-1, 1)`). Sem rosto detectado no frame (`no_face` ou ausência de landmarks), nenhuma caixa ou etiqueta é exibida (#55).
+
 **RF17 — Datas.** As datas vêm da API em UTC com `Z` (RN24) e são exibidas no horário local do navegador, em `pt-BR`.
 
 ### 2.5 Processamento
@@ -158,6 +160,7 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 | RF29 | ✅ | — | — |
 | RF30 | ✅ | — | — |
 | RF31 | ✅ | — | — |
+| RF32 | ✅ | — | — |
 
 Cobertura por testes:
 - Camada 1, unidade (#2, #8), em `src/lib/attentionAlgo.test.js`: RF01 (identidade e rotações conhecidas, que fixam o sinal), RF02 (EAR, landmark ausente, largura zero), RF03 e RF04 (por modo), além da paridade entre o worker e `attentionAlgo.js`.
@@ -170,6 +173,7 @@ Cobertura por testes:
 - RF29 (#20): `pages/teacher/Dashboard.delete.test.jsx`.
 - RF30 (#19): `lib/numberFormat.test.js`, `tests/ptbr-text.test.js`, `pages/Login.ptbr.test.jsx` e os blocos pt-BR de `ClassReport.summaries.test.jsx`, `ClassReview.test.jsx` e `Dashboard.a11y.test.jsx`.
 - RF31 (#18): `lib/theme.test.js` (script do `index.html` × `initialTheme()`, storage bloqueado), `components/ThemeToggle.test.jsx`, `pages/NotFound.test.jsx` e `tests/dark-surfaces.test.js` (varredura de fundos claros sem `dark:`; `Health.jsx` removido).
+- RF32 (#55): função pura de cálculo da caixa em `src/lib/faceBox.test.js` e renderização no canvas em `src/components/CameraPreview.test.jsx`.
 - Relatório do professor (#14, em `src/pages/teacher/ClassReport.test.jsx`): calibração do gráfico de atenção da turma (`AreaChart`) com domínio fixo `[0, 100]`, marcações `[0, 25, 50, 75, 100]`, formatação percentual sem repetição e margem esquerda `>= 0` prevenindo corte dos dígitos.
 - Layout responsivo (#12, em `src/components/Layout.test.jsx`): colapso da sidebar no mobile (< 768px) como gaveta com backdrop, botão de menu com `aria-expanded`, fechamento por clique externo, tecla Escape e navegação por link, com margem responsiva (`ml-0 md:ml-[240px]`) e eliminação de transbordamento horizontal.
 - Telas de aula ao vivo no mobile (#13, em `src/pages/ClassLiveResponsive.test.jsx`): layout empilhado (`flex-col md:flex-row`) no aluno com câmera e monitor em largura total sem esmagamento e transcrição empilhada abaixo (`w-full md:w-[300px]`); no professor, seletor de modos sem truncamento (`overflow-x-auto flex-nowrap`) e empilhamento da grade de alunos e transcrição eliminando divisão de 170px.
