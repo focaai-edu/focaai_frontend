@@ -33,6 +33,23 @@ function normalizeStreamUrl(url) {
   return `${s}/video`;
 }
 
+// Motivo do getUserMedia em pt-BR; o caso comum é a webcam presa por outro navegador (#47).
+function webcamErrorMessage(err) {
+  switch (err?.name) {
+    case 'NotReadableError':
+    case 'TrackStartError':
+      return 'A câmera está em uso por outro aplicativo ou navegador. Feche-o e clique em Tentar de novo.';
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'Permissão da câmera negada. Libere o acesso à câmera no navegador e clique em Tentar de novo.';
+    case 'NotFoundError':
+    case 'OverconstrainedError':
+      return 'Nenhuma câmera encontrada. Conecte uma webcam e clique em Tentar de novo.';
+    default:
+      return 'Não foi possível abrir a câmera. Clique em Tentar de novo.';
+  }
+}
+
 // ── Camera Form Modal ─────────────────────────────────────────────────────────
 
 function CameraFormModal({ camera, onSave, onClose }) {
@@ -161,6 +178,8 @@ export default function RoomCamera() {
   // Monitoring
   const [monitoring, setMonitoring] = useState(false);
   const [streamOk, setStreamOk]     = useState(false);
+  const [webcamError, setWebcamError] = useState('');
+  const [webcamAttempt, setWebcamAttempt] = useState(0);
   const [aggregate, setAggregate]   = useState(null);
   const [debugPose, setDebugPose]   = useState(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -265,8 +284,12 @@ export default function RoomCamera() {
       return;
     }
     setStreamOk(false);
+    setWebcamError('');
+    // Uma stream que chega depois da troca de aula/câmera não pode ficar presa à webcam (#47).
+    let cancelled = false;
     navigator.mediaDevices.getUserMedia({ video: true })
       .then(stream => {
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
         webcamStreamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -274,12 +297,17 @@ export default function RoomCamera() {
         }
         setStreamOk(true);
       })
-      .catch(() => setStreamOk(false));
+      .catch(err => {
+        if (cancelled) return;
+        setStreamOk(false);
+        setWebcamError(webcamErrorMessage(err));
+      });
     return () => {
+      cancelled = true;
       webcamStreamRef.current?.getTracks().forEach(t => t.stop());
       webcamStreamRef.current = null;
     };
-  }, [isWebcam, activeCameraId, selectedClassId]);
+  }, [isWebcam, activeCameraId, selectedClassId, webcamAttempt]);
 
   // ── Transcription ─────────────────────────────────────────────────────────
 
@@ -678,7 +706,7 @@ export default function RoomCamera() {
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80">
                   <p className="text-text-primary-dark text-sm font-semibold">Câmera indisponível</p>
                   {isWebcam ? (
-                    <p className="text-text-muted-dark text-xs">Verifique as permissões da webcam no navegador.</p>
+                    <p role="alert" className="text-text-muted-dark text-xs text-center max-w-xs">{webcamError || 'Abrindo a webcam...'}</p>
                   ) : (
                     <>
                       <p className="text-text-muted-dark text-xs">Verifique se o DroidCam está ativo e na mesma rede.</p>
@@ -688,21 +716,14 @@ export default function RoomCamera() {
                   <button
                     onClick={() => {
                       if (isWebcam) {
-                        setStreamOk(false);
-                        navigator.mediaDevices.getUserMedia({ video: true })
-                          .then(stream => {
-                            webcamStreamRef.current = stream;
-                            if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); }
-                            setStreamOk(true);
-                          })
-                          .catch(() => {});
+                        setWebcamAttempt(n => n + 1);
                       } else if (imgRef.current && proxyUrl) {
                         setStreamOk(false);
                         imgRef.current.src = `${proxyUrl}&t=${Date.now()}`;
                       }
                     }}
                     className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors mt-1">
-                    Reconectar
+                    {isWebcam ? 'Tentar de novo' : 'Reconectar'}
                   </button>
                 </div>
               )}
@@ -808,7 +829,7 @@ export default function RoomCamera() {
                         type="button"
                         aria-pressed={cam.id === activeCameraId}
                         aria-label={`Usar câmera ${cam.name}`}
-                        onClick={() => { setActiveCamId(cam.id); setStreamOk(false); }}
+                        onClick={() => { if (cam.id !== activeCamera?.id) { setActiveCamId(cam.id); setStreamOk(false); } }}
                         className="flex items-center gap-2 flex-1 min-w-0 text-left bg-transparent border-none p-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
                       >
                         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cam.id === activeCameraId ? 'bg-secondary' : 'bg-slate-500'}`} />
