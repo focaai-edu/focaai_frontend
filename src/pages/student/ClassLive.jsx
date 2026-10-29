@@ -24,7 +24,7 @@ export default function StudentClassLive() {
   const [teacherAway, setTeacherAway] = useState(false);
   const [mode, setMode] = useState('full_attention');
   const [loading, setLoading] = useState(true);
-  const [showDistraction, setShowDistraction] = useState(false);
+  const [summaryNotice, setSummaryNotice] = useState(false);
   const [transcriptions, setTranscriptions] = useState([]);
   const bottomRef = useRef(null);
 
@@ -79,12 +79,15 @@ export default function StudentClassLive() {
     });
     socket.on('monitoring_mode_changed', (data) => setMode(data.mode));
     socket.on('class_ended', () => navigate(`/student/classes/${classId}/review`));
-    socket.on('attention_alert', (data) => {
-      if (data.status === 'distracted' && data.duration_seconds > 30) {
-        setShowDistraction(true);
-        setTimeout(() => setShowDistraction(false), 5000);
-      }
-    });
+    // Resumo de um trecho perdido salvo (RN21): só o do próprio aluno (#5, RF13).
+    let noticeTimer = null;
+    const onSummaryReady = (data) => {
+      if (data.class_id !== classId || data.student_id !== user?.id) return;
+      setSummaryNotice(true);
+      clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(() => setSummaryNotice(false), 8000);
+    };
+    socket.on('summary_ready', onSummaryReady);
     socket.on('new_transcription', (data) => {
       if (data.class_id === classId) {
         setTranscriptions(prev => [...prev, { content: data.content, timestamp: data.timestamp }]);
@@ -94,13 +97,15 @@ export default function StudentClassLive() {
     return () => {
       socket.emit('leave_class', { class_id: classId });
       socket.off('class_state'); socket.off('monitoring_mode_changed');
-      socket.off('class_ended'); socket.off('attention_alert');
+      socket.off('class_ended');
+      socket.off('summary_ready', onSummaryReady);
+      clearTimeout(noticeTimer);
       socket.off('new_transcription');
       socket.off('teacher_presence');
       socket.off('connect', onConnect);
       socket.off('error', checkStillLive);
     };
-  }, [classId, navigate]);
+  }, [classId, navigate, user?.id]);
 
   const elapsed = useElapsed(cls?.started_at);
 
@@ -139,10 +144,10 @@ export default function StudentClassLive() {
         </div>
       )}
 
-      {/* Distraction notice */}
-      {showDistraction && (
-        <div className="flex-shrink-0 px-6 py-3 bg-[#4A90D9] text-white text-center text-sm font-medium">
-          Ei, parece que você se distraiu. A aula continua sendo salva para você.
+      {/* Aviso de resumo pronto (RF13) */}
+      {summaryNotice && (
+        <div role="status" className="flex-shrink-0 px-6 py-3 bg-[#4A90D9] text-white text-center text-sm font-medium motion-safe:animate-pulse">
+          Você perdeu um trecho da aula — o resumo já está disponível na revisão.
         </div>
       )}
 

@@ -98,4 +98,19 @@ describe('Dashboard do professor (#9)', () => {
     expect(screen.getByText('Ao vivo há 1 h 05 min')).toBeTruthy();
     expect(screen.queryByText(/Iniciada em/)).toBeNull();
   });
+
+  it('CA10 (erro): backend fora mostra "Não foi possível carregar.", não "Nenhuma aula ao vivo"', async () => {
+    api.get.mockRejectedValue(Object.assign(new Error('Network Error'), { request: {} }));
+    render(
+      <MemoryRouter initialEntries={['/teacher/dashboard']}>
+        <Routes><Route path="/teacher/dashboard" element={<TeacherDashboard />} /></Routes>
+      </MemoryRouter>,
+    );
+    await act(async () => {});
+    expect(screen.getByText('Não foi possível carregar.')).toBeTruthy();
+    expect(screen.queryByText('Nenhuma aula ao vivo')).toBeNull();
+    api.get.mockImplementation(classesBy([LIVE]));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' })); });
+    expect(screen.getByText('Biologia')).toBeTruthy();
+  });
 });

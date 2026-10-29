@@ -75,7 +75,7 @@ Sem matriz (ausente ou com menos de 16 valores), a pose é `0, 0, 0`.
 
 **RF12 — Transcrição ao vivo.** Aluno e professor veem cada `new_transcription` da aula em ordem de chegada, com o horário local, com rolagem automática para o fim.
 
-**RF13 — Aviso de resumo pronto.** Ao receber `summary_ready` com o próprio `student_id`, o aluno vê por 8 s: "Você perdeu um trecho da aula — o resumo já está disponível na revisão." O aviso respeita `prefers-reduced-motion`. `summary_ready` de outros alunos é ignorado.
+**RF13 — Aviso de resumo pronto.** Ao receber `summary_ready` com o próprio `student_id`, o aluno vê por 8 s: "Você perdeu um trecho da aula — o resumo já está disponível na revisão." O aviso respeita `prefers-reduced-motion` (a animação só existe com `motion-safe`). `summary_ready` de outros alunos, ou de outra aula, é ignorado. O antigo `attention_alert` não é mais escutado (#5).
 
 **RF14 — Áudio do professor.** Com a aula `live`, a tela do professor (e a câmera da sala, `/room`, com a sala aberta) grava o microfone em trechos de **5 s**, pelo mesmo hook `useAudioChunks(classId)`; nenhuma página cria `MediaRecorder` por conta própria. Cada trecho é um WebM completo (um `MediaRecorder` por trecho). Trechos com 500 bytes ou menos são descartados nas duas telas. Cada trecho é enviado como `audio_chunk { class_id, audio, duration_ms }`, onde `duration_ms` é o tempo real entre `recorder.start()` e o fim do trecho, arredondado (o último, ao parar, é mais curto). Parar a gravação (encerrar a aula, "Fechar Sala", sair da tela) finaliza e envia o trecho em curso, para a aula em que ele foi gravado, antes de liberar o microfone. Sem conexão, o trecho é descartado (sem fila nem reenvio) e o indicador troca "Gravando" por "Sem conexão — o áudio não está sendo enviado"; ao reconectar, nada do período offline é enviado. Se a permissão do microfone (ou da webcam do aluno) chega depois de sair da tela, as tracks são paradas na hora e nada é gravado (#4).
 
@@ -93,14 +93,19 @@ Sem matriz (ausente ou com menos de 16 valores), a pose é `0, 0, 0`.
 
 **RF16 — Revisão.** A tela `/student/classes/:id/review` mostra:
 - percentual e tempos de atenção do próprio aluno (relatório do backend);
-- a linha do tempo completa dos seus eventos (atento, distraído, sem câmera);
-- a lista de distrações com o resumo de cada uma. Um clique abre o resumo completo;
+- a linha do tempo completa dos seus eventos (atento, distraído, sem câmera), na escala real da aula: vai do `started_at` ao `ended_at` da aula, cada segmento tem posição e largura do seu início e duração, os intervalos sem evento aparecem como "Fora", evento aberto vai até o fim da aula, e aula de duração 0 não quebra a barra;
+- a lista de distrações com a duração em segundos ("20 s", "1 min 35 s") e a prévia do resumo sem marcadores. Um clique abre o resumo completo, renderizado como Markdown simples (títulos, listas, parágrafos e **negrito**, em `SummaryText`), sem HTML cru: HTML no resumo aparece como texto;
+- o resumo de uma distração da linha do tempo é casado pelo `attention_event_id` quando o relatório o traz, senão pelo instante de início (nunca pela string, que pode vir como "+00:00" ou "Z");
 - a transcrição completa da aula;
 - um download `.txt` com os resumos.
 
 Distração sem resumo:
 - se a aula terminou há menos de 60 s, mostra "Gerando resumo…" e recarrega os dados a cada 5 s;
 - depois disso, mostra "Resumo não disponível para este trecho.".
+
+O relatório do professor segue a mesma regra de duração, prévia e recarga dos resumos (#5).
+
+**RF27 — Erro de carga e atualização.** Falha de rede ou resposta 5xx no painel do aluno, na revisão, no relatório, no painel do professor ou no painel de transcrição mostra "Não foi possível carregar." com "Tentar de novo" (refaz a requisição), e não o texto de estado vazio. Respostas 4xx (não participou, aula não encerrada) continuam no estado vazio. O painel do aluno recarrega as aulas a cada 15 s e ao focar a janela, então uma aula que começa mostra "Entrar" sem recarregar a página; se uma dessas recargas falhar, a lista que já estava na tela continua (#5).
 
 **RF17 — Datas.** As datas vêm da API em UTC com `Z` (RN24) e são exibidas no horário local do navegador, em `pt-BR`.
 
@@ -126,10 +131,10 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 | RF10 | ✅ | — | — |
 | RF11 | ✅ | — | — |
 | RF12 | ✅ | — | — |
-| RF13 | ⚠️ | Escuta `attention_alert`, que o backend nunca emite; `summary_ready` não é escutado | #5 (+ backend#3) |
+| RF13 | ✅ | — | — |
 | RF14 | ✅ | O backend ainda ignora `duration_ms` e não aceita o trecho nos 10 s depois do fim (RN15/RN16) | backend#4 |
 | RF15 | ✅ | — | — |
-| RF16 | ⚠️ | Distração sem resumo mostra "Sem resumo disponível." direto, sem estado "gerando" | #5 |
+| RF16 | ✅ | O relatório ainda não traz `attention_event_id` nas distrações; o casamento usa o instante | backend#3 |
 | RF17 | ⚠️ | Correto no frontend, mas horários de eventos e resumos aparecem 3 h adiantados porque o backend envia sem `Z` | backend#8 |
 | RF18 | ✅ | — | — |
 | RF19 | ✅ | — | — |
@@ -140,12 +145,14 @@ Situação do código em 27/09/2026 (`main` @ `27cb1aa`). Atualize a linha na me
 | RF24 | ✅ | — | — |
 | RF25 | ✅ | — | — |
 | RF26 | ✅ | — | — |
+| RF27 | ✅ | — | — |
 
 Cobertura por testes:
 - Camada 1, unidade (#2, #8), em `src/lib/attentionAlgo.test.js`: RF01 (identidade e rotações conhecidas, que fixam o sinal), RF02 (EAR, landmark ausente, largura zero), RF03 e RF04 (por modo), além da paridade entre o worker e `attentionAlgo.js`.
 - Camada 2, integração (#8), em `src/components/AttentionMonitor.test.jsx` e `src/pages/student/ClassLive.test.jsx`, com worker, socket e câmera falsos (`src/test/attentionHarness.js`) e timers falsos: sequência exata de `attention_update` para RF05–RF08, RF18 (troca de modo e falha do detector), RF19 e RF20.
 - RF09, RF10 e RF21 (#3): reemissão na troca de modo em `AttentionMonitor.test.jsx`; reconexão do aluno (inclusive aula encerrada durante a queda) em `pages/student/ClassLive.test.jsx`; do professor em `pages/teacher/ClassLive.test.jsx`; aviso de erro em `components/ServerErrorAlert.test.jsx`. RF22 (#7): ciclo do socket com a sessão em `context/AuthContext.test.jsx` e contrato de identidade em `pages/student/ClassLive.test.jsx`. RF23–RF26 (#9): `pages/teacher/Dashboard.test.jsx`, `pages/teacher/ClassLive.test.jsx`, `pages/student/ClassLive.test.jsx`, `pages/room/RoomCamera.test.jsx` e `lib/duration.test.js`. As demais regras ainda não têm teste.
 - RF14 (#4): gravação em `hooks/useAudioChunks.test.js` (duração com timers falsos, descarte ≤ 500 bytes, offline, último trecho, permissão tardia) e nas telas (`pages/teacher/ClassLive.test.jsx`, `pages/room/RoomCamera.test.jsx`); gravação única em `tests/single-audio-recorder.test.js`; webcam com permissão tardia em `components/AttentionMonitor.test.jsx`.
+- RF13, RF16 e RF27 (#5): `components/SummaryText.test.jsx`, `components/AttentionTimeline.test.jsx`, `components/TranscriptPanel.test.jsx`, `pages/student/ClassReview.test.jsx`, `pages/student/ClassLive.test.jsx`, `pages/student/Dashboard.test.jsx`, `pages/teacher/ClassReport.summaries.test.jsx`, `pages/teacher/Dashboard.test.jsx` e `lib/duration.test.js`.
 - Relatório do professor (#14, em `src/pages/teacher/ClassReport.test.jsx`): calibração do gráfico de atenção da turma (`AreaChart`) com domínio fixo `[0, 100]`, marcações `[0, 25, 50, 75, 100]`, formatação percentual sem repetição e margem esquerda `>= 0` prevenindo corte dos dígitos.
 - Layout responsivo (#12, em `src/components/Layout.test.jsx`): colapso da sidebar no mobile (< 768px) como gaveta com backdrop, botão de menu com `aria-expanded`, fechamento por clique externo, tecla Escape e navegação por link, com margem responsiva (`ml-0 md:ml-[240px]`) e eliminação de transbordamento horizontal.
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -7,6 +7,11 @@ import {
 import Layout from '../../components/Layout';
 import TranscriptPanel from '../../components/TranscriptPanel';
 import api from '../../services/api';
+import LoadError from '../../components/LoadError';
+import { summaryPreview } from '../../components/SummaryText';
+import { useSummaryRefresh } from '../../hooks/useSummaryRefresh';
+import { isLoadFailure } from '../../lib/loadError';
+import { formatSeconds } from '../../lib/duration';
 
 const MODE_PT = {
   full_attention: 'Atenção Total',
@@ -47,22 +52,36 @@ export default function TeacherClassReport() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expandedStudent, setExpandedStudent] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const res = await api.get(`/api/classes/${classId}/report`);
-        if (!cancelled) setReport(res.data);
-      } catch { /* estado de erro próprio: #5 (CA10) */ }
-      finally { if (!cancelled) setLoading(false); }
+  const load = useCallback(async () => {
+    try {
+      const res = await api.get(`/api/classes/${classId}/report`);
+      setReport(res.data);
+      setLoadFailed(false);
+    } catch (err) {
+      // 4xx (aula não encerrada etc.) segue no estado vazio; rede/5xx é erro (#5, F33).
+      if (isLoadFailure(err)) setLoadFailed(true);
+    } finally {
+      setLoading(false);
     }
-    load();
-    return () => { cancelled = true; };
   }, [classId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Os resumos chegam depois do fim (RN18): recarrega até 60 s depois (#5, F34).
+  const { generating } = useSummaryRefresh({
+    endedAt: report?.ended_at,
+    missing: (report?.students || []).some((s) => (s.distraction_events || []).some((e) => !e.summary)),
+    reload: load,
+  });
 
   if (loading) {
     return <Layout role="teacher"><p className="text-gray-500 dark:text-[#64748B]">Gerando relatório...</p></Layout>;
+  }
+
+  if (loadFailed) {
+    return <Layout role="teacher"><LoadError onRetry={() => { setLoading(true); load(); }} /></Layout>;
   }
 
   if (!report) {
@@ -297,8 +316,14 @@ export default function TeacherClassReport() {
                             <span className="text-gray-500 dark:text-[#64748B]">
                               {evt.started_at ? new Date(evt.started_at).toLocaleTimeString('pt-BR') : '?'} — {evt.ended_at ? new Date(evt.ended_at).toLocaleTimeString('pt-BR') : '?'}
                             </span>
-                            <span className="ml-2 text-[#4A90D9]">({Math.round(evt.duration_seconds / 60)}min)</span>
-                            {evt.summary && <p className="mt-1 mb-0 text-xs text-gray-500 dark:text-[#64748B]">{evt.summary.substring(0, 100)}...</p>}
+                            <span className="ml-2 text-[#4A90D9]">({formatSeconds(evt.duration_seconds)})</span>
+                            {evt.summary ? (
+                              <p className="mt-1 mb-0 text-xs text-gray-500 dark:text-[#64748B] line-clamp-2">{summaryPreview(evt.summary)}</p>
+                            ) : (
+                              <p className="mt-1 mb-0 text-xs text-gray-400 dark:text-[#475569] italic">
+                                {generating ? 'Gerando resumo…' : 'Resumo não disponível para este trecho.'}
+                              </p>
+                            )}
                           </div>
                         ))}
                       </div>

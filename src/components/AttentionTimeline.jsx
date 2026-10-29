@@ -1,3 +1,5 @@
+import { formatSeconds } from '../lib/duration';
+
 const STATUS_COLORS = {
   attentive: '#22C55E',
   distracted: '#4A90D9',
@@ -16,35 +18,71 @@ const STATUS_LABELS = {
   break: 'Intervalo',
 };
 
-export default function AttentionTimeline({ events = [], totalDurationMinutes = 45, onPeriodClick }) {
-  if (!events || events.length === 0) {
+/**
+ * Segmentos da linha do tempo na escala real da aula (#5, F28): cada evento fica
+ * na posição e com a largura do seu início e duração desde `classStart`; o que
+ * não tem evento (o aluno saiu, ou ainda não tinha entrado) vira "Fora". Evento
+ * aberto vai até `classEnd`. Aula de duração 0 não gera NaN/Infinity.
+ * `left`/`width` são percentuais.
+ */
+export function buildSegments(events, classStart, classEnd) {
+  const start = Date.parse(classStart);
+  const end = Date.parse(classEnd);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
+  const total = end - start;
+  const pct = (ms) => ((ms - start) / total) * 100;
+
+  const sorted = [...events]
+    .map((e) => ({
+      event: e,
+      from: Math.max(start, Date.parse(e.started_at)),
+      to: Math.min(end, e.ended_at ? Date.parse(e.ended_at) : end),
+    }))
+    .filter((s) => Number.isFinite(s.from) && Number.isFinite(s.to) && s.to > s.from)
+    .sort((a, b) => a.from - b.from);
+
+  const segments = [];
+  const gap = (from, to) => {
+    if (to > from) segments.push({ status: 'disconnected', from, to, left: pct(from), width: pct(to) - pct(from) });
+  };
+  let cursor = start;
+  for (const s of sorted) {
+    gap(cursor, s.from);
+    const from = Math.max(s.from, cursor);
+    if (s.to > from) {
+      segments.push({ status: s.event.status, event: s.event, from, to: s.to, left: pct(from), width: pct(s.to) - pct(from) });
+      cursor = s.to;
+    }
+  }
+  gap(cursor, end);
+  return segments;
+}
+
+export default function AttentionTimeline({ events = [], classStart, classEnd, onPeriodClick }) {
+  const segments = buildSegments(events, classStart, classEnd);
+  if (segments.length === 0) {
     return (
       <div className="py-8 text-center text-gray-500 text-sm">Sem dados de atenção disponíveis.</div>
     );
   }
 
-  const totalSeconds = totalDurationMinutes * 60;
-
   return (
     <div>
-      <div className="flex h-8 rounded-lg overflow-hidden border border-gray-200 mb-3">
-        {events.map((event, i) => {
-          const startSec = (new Date(event.started_at).getTime() - new Date(events[0].started_at).getTime()) / 1000;
-          const endSec = event.ended_at
-            ? (new Date(event.ended_at).getTime() - new Date(events[0].started_at).getTime()) / 1000
-            : startSec + 30;
-          const widthPct = ((endSec - startSec) / totalSeconds) * 100;
-
+      <div className="relative h-8 rounded-lg overflow-hidden border border-gray-200 mb-3">
+        {segments.map((seg, i) => {
+          const clickable = seg.status === 'distracted' && Boolean(onPeriodClick);
           return (
             <div
               key={i}
-              title={`${STATUS_LABELS[event.status]}: ${Math.round((endSec - startSec) / 60)} min`}
-              onClick={() => event.status === 'distracted' && onPeriodClick?.(event)}
-              className="h-full transition-opacity hover:opacity-80"
+              data-status={seg.status}
+              title={`${STATUS_LABELS[seg.status] || seg.status}: ${formatSeconds((seg.to - seg.from) / 1000)}`}
+              onClick={() => clickable && onPeriodClick(seg.event)}
+              className="absolute top-0 h-full transition-opacity hover:opacity-80"
               style={{
-                width: `${Math.max(widthPct, 0.5)}%`,
-                backgroundColor: STATUS_COLORS[event.status] || '#9CA3AF',
-                cursor: event.status === 'distracted' ? 'pointer' : 'default',
+                left: `${seg.left}%`,
+                width: `${seg.width}%`,
+                backgroundColor: STATUS_COLORS[seg.status] || '#9CA3AF',
+                cursor: clickable ? 'pointer' : 'default',
               }}
             />
           );

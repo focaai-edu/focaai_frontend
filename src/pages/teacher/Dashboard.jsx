@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router';
 import Layout from '../../components/Layout';
 import api from '../../services/api';
 import { formatDuration } from '../../lib/duration';
+import LoadError from '../../components/LoadError';
+import { isLoadFailure } from '../../lib/loadError';
 
 const STATUS_LABELS = { live: 'Ao Vivo', scheduled: 'Agendada', ended: 'Encerrada' };
 const STATUS_COLORS = {
@@ -128,6 +130,7 @@ export default function TeacherDashboard() {
   const navigate = useNavigate();
   const [allClasses, setAllClasses]   = useState([]);
   const [tab, setTab]                 = useState('live');
+  const [loadFailed, setLoadFailed]   = useState(false);
   // Relógio do "Ao vivo há ..." dos cards (#9, CA8).
   const [now, setNow]                 = useState(() => Date.now());
   const [editingClass, setEditingClass] = useState(null); // null = closed, undefined = create, obj = edit
@@ -148,8 +151,10 @@ export default function TeacherDashboard() {
         ...scheduled.data.classes,
         ...ended.data.classes,
       ]);
-    } catch {
-      setAllClasses([]);
+      setLoadFailed(false);
+    } catch (err) {
+      if (isLoadFailure(err)) setLoadFailed(true);
+      else setAllClasses([]);
     } finally {
       setLoading(false);
     }
@@ -282,6 +287,8 @@ export default function TeacherDashboard() {
             <div key={i} className="h-20 bg-gray-100 dark:bg-[#1E293B] rounded-xl animate-pulse" />
           ))}
         </div>
+      ) : loadFailed ? (
+        <LoadError onRetry={() => { setLoading(true); fetchClasses(); }} />
       ) : classes.length === 0 ? (
         <div className="py-20 text-center">
           <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-[#1E293B] flex items-center justify-center mx-auto mb-4">
