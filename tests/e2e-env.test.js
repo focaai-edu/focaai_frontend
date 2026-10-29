@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { e2eDatabaseUrl, readDotenv, assertChromium, DEFAULT_E2E_DATABASE_URL } from '../e2e/env.js';
+import { e2eDatabaseUrl, e2eDatabaseUrlFor, readDotenv, assertChromium, DEFAULT_E2E_DATABASE_URL } from '../e2e/env.js';
 
 const dotenvWith = (content) => {
   const dir = mkdtempSync(join(tmpdir(), 'e2e-env-'));
@@ -46,5 +46,17 @@ describe('assertChromium (#40 CA3)', () => {
   });
   it('passa quando o executável existe', () => {
     expect(() => assertChromium(process.execPath)).not.toThrow();
+  });
+});
+
+describe('e2eDatabaseUrl com a pasta do backend escolhida (#40, revisão do PR #41)', () => {
+  it('lê o .env de E2E_BACKEND_DIR, não um ../backend fixo', () => {
+    const otherBackend = mkdtempSync(join(tmpdir(), 'outro-backend-'));
+    writeFileSync(join(otherBackend, '.env'), "TEST_DATABASE_URL='postgresql://wt:senha@localhost:5433/foca_ai_test'\n");
+    expect(e2eDatabaseUrlFor({}, otherBackend)).toBe('postgresql://wt:senha@localhost:5433/foca_ai_e2e_test');
+  });
+
+  it('pasta sem .env cai no padrão', () => {
+    expect(e2eDatabaseUrlFor({}, mkdtempSync(join(tmpdir(), 'sem-env-')))).toBe(DEFAULT_E2E_DATABASE_URL);
   });
 });

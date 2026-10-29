@@ -33,7 +33,7 @@ Playwright com câmera falsa (`.y4m`) e o MediaPipe real. Fica fora do `npm test
 |---|---|---|
 | `E2E_BACKEND_DIR` | `../backend` | pasta do backend (de preferência um checkout limpo do `main`) |
 | `E2E_PYTHON` | `python3` | Python com as dependências do backend |
-| `E2E_DATABASE_URL` | `TEST_DATABASE_URL` de `../backend/.env`, só com o banco trocado para `foca_ai_e2e_test` (aspas aceitas); sem ele, `postgresql://postgres:postgres@localhost:5432/foca_ai_e2e_test` | banco do e2e |
+| `E2E_DATABASE_URL` | `TEST_DATABASE_URL` do `.env` em `E2E_BACKEND_DIR`, só com o banco trocado para `foca_ai_e2e_test` (aspas aceitas); se essa pasta não tiver `.env` (ex.: um worktree limpo), defina `E2E_DATABASE_URL`; sem nenhum dos dois, `postgresql://postgres:postgres@localhost:5432/foca_ai_e2e_test` | banco do e2e |
 | `E2E_CHROMIUM` | o do Playwright | executável do Chromium |
 | `E2E_FRONT_PORT` | `5190` | Vite do e2e (o backend do e2e usa a **5100**) |
 

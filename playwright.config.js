@@ -2,20 +2,20 @@
 // Precisa de rede (o MediaPipe vem do CDN) e de um backend do main:
 //   E2E_BACKEND_DIR  pasta do backend (padrão ../backend)
 //   E2E_PYTHON       Python com as dependências do backend (padrão python3)
-//   E2E_DATABASE_URL banco de TESTE, nome terminado em _test (padrão: TEST_DATABASE_URL de
-//                    ../backend/.env com o banco trocado para foca_ai_e2e_test)
+//   E2E_DATABASE_URL banco de TESTE, nome terminado em _test (padrão: TEST_DATABASE_URL do
+//                    .env de E2E_BACKEND_DIR com o banco trocado para foca_ai_e2e_test)
 //   E2E_CHROMIUM     opcional: executável do Chromium (senão, o do Playwright)
 //   E2E_FRONT_PORT   porta do Vite do e2e (padrão 5190; o backend usa 5100)
 import { defineConfig } from '@playwright/test';
 import { resolve } from 'node:path';
-import { e2eDatabaseUrl } from './e2e/env.js';
+import { e2eDatabaseUrlFor } from './e2e/env.js';
 
 const BACKEND_PORT = 5100;
 const FRONT_PORT = Number(process.env.E2E_FRONT_PORT || 5190);
 const backendDir = resolve(process.env.E2E_BACKEND_DIR || '../backend');
 const python = process.env.E2E_PYTHON || 'python3';
-// Mesma conexão do TEST_DATABASE_URL do backend/.env, só com o banco foca_ai_e2e_test (#40).
-const databaseUrl = e2eDatabaseUrl(process.env, resolve('../backend/.env'));
+// Mesma conexão do TEST_DATABASE_URL do .env do backend escolhido, só com o banco foca_ai_e2e_test (#40).
+const databaseUrl = e2eDatabaseUrlFor(process.env, backendDir);
 const prepareDb = resolve('e2e/prepare_db.py');
 
 export default defineConfig({

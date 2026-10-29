@@ -1,5 +1,6 @@
 // Ambiente do e2e (#40): URL do banco de teste e checagem do Chromium.
 import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 export const DEFAULT_E2E_DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/foca_ai_e2e_test';
 const E2E_DB = 'foca_ai_e2e_test';
@@ -29,4 +30,9 @@ export function assertChromium(path) {
   if (!path || !existsSync(path)) {
     throw new Error(`Chromium do Playwright não encontrado em ${path}. Rode \`npx playwright install chromium\` ou defina E2E_CHROMIUM.`);
   }
+}
+
+// Mesma regra, lendo o .env da pasta do backend escolhida (E2E_BACKEND_DIR).
+export function e2eDatabaseUrlFor(env, backendDir) {
+  return e2eDatabaseUrl(env, join(backendDir, '.env'));
 }
