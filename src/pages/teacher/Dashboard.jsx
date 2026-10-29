@@ -324,7 +324,10 @@ export default function TeacherDashboard() {
         {tabs.map(t => (
           <button
             key={t.key}
+            type="button"
             onClick={() => setTab(t.key)}
+            // Rótulo e número separados para o leitor de tela: "Agendadas, 1 aula" (#19, V13).
+            aria-label={counts[t.key] > 0 ? `${t.label}, ${counts[t.key]} ${counts[t.key] === 1 ? 'aula' : 'aulas'}` : t.label}
             className={`relative px-5 py-2.5 text-sm font-medium border-none cursor-pointer transition-colors bg-transparent ${
               tab === t.key
                 ? 'text-[#1B4F81] dark:text-[#7DB8F0]'
@@ -333,7 +336,7 @@ export default function TeacherDashboard() {
           >
             {t.label}
             {counts[t.key] > 0 && (
-              <span className={`ml-2 px-1.5 py-0.5 rounded-full text-xs font-semibold ${
+              <span aria-hidden="true" className={`ml-2 px-1.5 py-0.5 rounded-full text-xs font-semibold ${
                 t.key === 'live'
                   ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
                   : 'bg-gray-100 dark:bg-[#334155] text-gray-500 dark:text-[#94A3B8]'

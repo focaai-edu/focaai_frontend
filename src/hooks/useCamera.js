@@ -42,11 +42,11 @@ export function useCamera() {
       setSource('webcam');
     } catch (err) {
       if (err.name === 'NotAllowedError') {
-        setError('Permissao de camera negada.');
+        setError('Permissão de câmera negada.');
       } else if (err.name === 'NotFoundError') {
-        setError('Nenhuma camera encontrada.');
+        setError('Nenhuma câmera encontrada.');
       } else {
-        setError('Erro ao acessar camera: ' + err.message);
+        setError('Erro ao acessar a câmera: ' + err.message);
       }
     }
   }, []);
