@@ -19,6 +19,46 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+// ── Confirmação de exclusão (#20) ──────────────────────────────────────────────
+
+function DeleteClassDialog({ cls, busy, onConfirm, onCancel }) {
+  // Encerrada tem dados que somem junto (cascata do backend, RN04); agendada ainda não.
+  const message = cls.status === 'ended'
+    ? `Tem certeza que deseja excluir a aula "${cls.title}"? A transcrição, os eventos de atenção e os resumos dessa aula serão removidos permanentemente. Esta ação não pode ser desfeita.`
+    : `Tem certeza que deseja excluir a aula "${cls.title}"? Esta ação não pode ser desfeita.`;
+  return (
+    <div className="fixed inset-0 bg-black/40 z-[1000] flex items-center justify-center p-4" onClick={busy ? undefined : onCancel}>
+      <Dialog
+        titleId="delete-class-title"
+        onClose={busy ? () => {} : onCancel}
+        className="bg-white dark:bg-[#1E293B] rounded-2xl p-6 max-w-md w-full shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="delete-class-title" className="text-lg font-semibold text-gray-900 dark:text-[#F1F5F9] mb-3">Excluir aula</h2>
+        <p className="text-sm text-gray-600 dark:text-[#CBD5E1] mb-5">{message}</p>
+        <div className="flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="px-4 py-2 rounded-lg border border-gray-200 dark:border-[#334155] text-gray-600 dark:text-[#94A3B8] text-sm font-medium cursor-pointer hover:bg-gray-50 dark:hover:bg-[#334155] transition-colors bg-transparent disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className="px-4 py-2 rounded-lg bg-danger text-white text-sm font-semibold hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed transition-opacity"
+          >
+            {busy ? 'Excluindo…' : 'Excluir aula'}
+          </button>
+        </div>
+      </Dialog>
+    </div>
+  );
+}
+
 // ── Class Form Modal (create + edit) ──────────────────────────────────────────
 
 function ClassFormModal({ editing, onSave, onClose }) {
@@ -201,14 +241,24 @@ export default function TeacherDashboard() {
     }
   };
 
-  const handleDelete = async (cls) => {
-    if (!window.confirm(`Excluir "${cls.title}"? Esta ação não pode ser desfeita.`)) return;
-    setError('');
+  // Exclusão confirmada no Dialog (#20). Sucesso: tira o card da lista na hora
+  // (o contador da aba acompanha), sem recarregar. Erro: o card fica e o aviso diz.
+  const [deleting, setDeleting] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [notice, setNotice] = useState(null); // { kind: 'success' | 'error', text }
+
+  const confirmDelete = async () => {
+    const cls = deleting;
+    setDeleteBusy(true);
     try {
       await api.delete(`/api/classes/${cls.id}`);
-      await fetchClasses();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Erro ao excluir aula.');
+      setAllClasses((prev) => prev.filter((c) => c.id !== cls.id));
+      setNotice({ kind: 'success', text: 'Aula excluída com sucesso.' });
+    } catch {
+      setNotice({ kind: 'error', text: 'Não foi possível excluir a aula. Tente novamente.' });
+    } finally {
+      setDeleteBusy(false);
+      setDeleting(null);
     }
   };
 
@@ -256,6 +306,17 @@ export default function TeacherDashboard() {
 
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">{error}</div>
+      )}
+
+      {notice && (
+        <div
+          role={notice.kind === 'error' ? 'alert' : 'status'}
+          className={`mb-4 p-3 rounded-lg text-sm ${notice.kind === 'error'
+            ? 'bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 text-red-600 dark:text-red-400'
+            : 'bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800 text-green-700 dark:text-green-400'}`}
+        >
+          {notice.text}
+        </div>
       )}
 
       {/* Tabs */}
@@ -369,7 +430,8 @@ export default function TeacherDashboard() {
                       </svg>
                     </button>
                     <button
-                      onClick={() => handleDelete(cls)}
+                      type="button"
+                      onClick={() => setDeleting(cls)}
                       title="Excluir aula"
                       aria-label={`Excluir aula ${cls.title}`}
                       className="w-8 h-8 flex items-center justify-center rounded-lg border border-red-100 dark:border-red-900/40 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors bg-transparent cursor-pointer"
@@ -426,12 +488,28 @@ export default function TeacherDashboard() {
                           d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z" />
                       </svg>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleting(cls)}
+                      title="Excluir aula"
+                      aria-label={`Excluir aula ${cls.title}`}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-red-100 dark:border-red-900/40 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors bg-transparent cursor-pointer"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m2 0a1 1 0 00-1-1h-4a1 1 0 00-1 1m6 0H7" />
+                      </svg>
+                    </button>
                   </>
                 )}
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {deleting && (
+        <DeleteClassDialog cls={deleting} busy={deleteBusy} onConfirm={confirmDelete} onCancel={() => setDeleting(null)} />
       )}
 
       {showModal && (
