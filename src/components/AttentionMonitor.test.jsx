@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, screen, fireEvent } from '@testing-library/react';
+import { render, cleanup, screen, fireEvent, act } from '@testing-library/react';
 import {
   setupEnvironment, teardownEnvironment, flush, advance, lastWorker,
   emitted, updates, pose, noFace, changeVisibility,
@@ -377,5 +377,24 @@ describe('AttentionMonitor — reemissão na troca de modo (#3, RF09; #8 CA20)',
     expect(emitted(socket.current)).toEqual([
       ['attention_update', 'attentive'], ['attention_update', 'distracted'], ['attention_update', 'distracted'],
     ]);
+  });
+});
+
+describe('AttentionMonitor — permissão concedida depois de sair (#4 CA10, F11)', () => {
+  it('a track da webcam é parada assim que a permissão chega', async () => {
+    let grant;
+    env.getUserMedia.mockReturnValue(new Promise((resolve) => { grant = resolve; }));
+    const { unmount } = render(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    await flush();
+    unmount();
+    await act(async () => { grant(env.stream); });
+    expect(env.stream.track.stop).toHaveBeenCalled();
+  });
+
+  it('play() interrompido (AbortError) também para a track daquela tentativa', async () => {
+    HTMLMediaElement.prototype.play.mockRejectedValueOnce(Object.assign(new Error('interrompido'), { name: 'AbortError' }));
+    render(<AttentionMonitor classId={7} studentId={3} monitoringMode="full_attention" />);
+    await flush();
+    expect(env.stream.track.stop).toHaveBeenCalled();
   });
 });

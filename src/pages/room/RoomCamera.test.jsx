@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { cleanup, screen, fireEvent, act } from '@testing-library/react';
-import { setupEnvironment, teardownEnvironment, flush } from '../../test/attentionHarness';
+import { setupEnvironment, teardownEnvironment, flush, FakeMediaRecorder } from '../../test/attentionHarness';
 import { renderRoutes } from '../../test/router';
 
 const socket = vi.hoisted(() => ({ current: null }));
@@ -116,5 +116,44 @@ describe('Câmera da sala — aula ao vivo (#9 CA7/CA9/CA13)', () => {
     await flush();
     expect(screen.queryByText('A aula foi encerrada.')).toBeNull();
     expect(screen.getByRole('button', { name: 'Fechar Sala' })).toBeTruthy();
+  });
+});
+
+describe('Câmera da sala — trechos de áudio (#4)', () => {
+  const audioChunks = () => socket.current.emit.mock.calls.filter(([ev]) => ev === 'audio_chunk').map(([, p]) => p);
+
+  it('CA2: os trechos levam duration_ms medido', async () => {
+    await renderRoom();
+    await openRoom();
+    act(() => { vi.advanceTimersByTime(5000); });
+    expect(audioChunks()).toEqual([{ class_id: 7, audio: 'QUJD', duration_ms: 5000 }]);
+  });
+
+  it('CA5: trecho com 500 bytes ou menos não é enviado (antes /room enviava)', async () => {
+    FakeMediaRecorder.size = 500;
+    await renderRoom();
+    await openRoom();
+    act(() => { vi.advanceTimersByTime(10000); });
+    expect(audioChunks()).toEqual([]);
+  });
+
+  it('CA8 (F10): "Fechar Sala" envia o trecho em curso com a duração real', async () => {
+    await renderRoom();
+    await openRoom();
+    act(() => { vi.advanceTimersByTime(2600); });
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar Sala' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sair sem encerrar' })); });
+    expect(audioChunks()).toEqual([{ class_id: 7, audio: 'QUJD', duration_ms: 2600 }]);
+    expect(env.stream.track.stop).toHaveBeenCalled();
+  });
+
+  it('CA7 (erro): sem conexão, descarta e mostra o aviso', async () => {
+    await renderRoom();
+    await openRoom();
+    socket.current.connected = false;
+    socket.current.trigger('disconnect', 'transport close');
+    expect(screen.getByText(/Sem conexão — o áudio não está sendo enviado/)).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(10000); });
+    expect(audioChunks()).toEqual([]);
   });
 });

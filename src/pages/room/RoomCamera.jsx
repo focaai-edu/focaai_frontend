@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import socket from '../../services/socket';
 import api from '../../services/api';
 import { useLiveClassExitGuard } from '../../hooks/useLiveClassExitGuard';
+import { useAudioChunks } from '../../hooks/useAudioChunks';
 import { MODE_LABELS, pctColor } from '../../lib/attentionAlgo';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -162,7 +163,6 @@ export default function RoomCamera() {
   const [debugPose, setDebugPose]   = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [transcriptions, setTranscriptions] = useState([]);
-  const [micActive, setMicActive] = useState(false);
 
   // Refs
   const imgRef        = useRef(null);
@@ -172,8 +172,6 @@ export default function RoomCamera() {
   const currentModeRef       = useRef('full_attention');
   const selectedClassIdRef   = useRef(null);
   const transcriptEndRef     = useRef(null);
-  const micStreamRef         = useRef(null);
-  const recorderRef          = useRef(null);
   const videoRef             = useRef(null);
   const webcamStreamRef      = useRef(null);
   const isWebcamRef          = useRef(false);
@@ -446,57 +444,19 @@ export default function RoomCamera() {
         const ctx = overlayRef.current.getContext('2d');
         ctx.clearRect(0, 0, overlayRef.current.width, overlayRef.current.height);
       }
-      if (recorderRef.current) { recorderRef.current.stop(); recorderRef.current = null; }
-      if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
-      setMicActive(false);
     };
   }, [monitoring, captureAndSend]);
 
+  // Áudio da aula: mesmo hook da tela do professor (RF14, #4). Grava com a sala
+  // aberta; ao fechar, o trecho em curso é enviado antes de liberar o microfone.
+  const audio = useAudioChunks(selectedClassId, { enabled: monitoring });
+  const micActive = audio.status === 'recording';
+
   // ── Room open / close ─────────────────────────────────────────────────────
 
-  const handleOpenRoom = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      micStreamRef.current = stream;
-      setMicActive(true);
+  const handleOpenRoom = () => setMonitoring(true);
 
-      function recordChunk() {
-        if (!micStreamRef.current) return;
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-          ? 'audio/webm;codecs=opus' : 'audio/webm';
-        const recorder = new MediaRecorder(micStreamRef.current, { mimeType });
-        const chunks = [];
-        recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-        recorder.onstop = () => {
-          if (chunks.length > 0 && selectedClassIdRef.current && micStreamRef.current) {
-            const blob = new Blob(chunks, { type: 'audio/webm' });
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              socket.emit('audio_chunk', { class_id: selectedClassIdRef.current, audio: reader.result.split(',')[1] });
-            };
-            reader.readAsDataURL(blob);
-          }
-          recordChunk();
-        };
-        recorder.start();
-        recorderRef.current = recorder;
-        setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 5000);
-      }
-
-      recordChunk();
-    } catch (err) {
-      console.warn('[RoomCamera] Microfone indisponível:', err.message);
-      setMicActive(false);
-    }
-    setMonitoring(true);
-  };
-
-  const handleCloseRoom = useCallback(() => {
-    if (recorderRef.current) { recorderRef.current.stop(); recorderRef.current = null; }
-    if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(t => t.stop()); micStreamRef.current = null; }
-    setMicActive(false);
-    setMonitoring(false);
-  }, []);
+  const handleCloseRoom = useCallback(() => setMonitoring(false), []);
 
   // Aula encerrada em outra aba (dashboard) ou pelo servidor: fecha a sala,
   // desliga câmera e microfone e recarrega as aulas ao vivo (#9, F12).
@@ -679,7 +639,10 @@ export default function RoomCamera() {
                 <div className="absolute top-3 left-3 z-10 bg-black/60 text-white text-xs font-mono rounded-md px-3 py-2 space-y-0.5 pointer-events-none">
                   <div>{connected ? '🟢 Socket' : '🔴 Socket desconectado'}</div>
                   <div>🟢 Backend (YuNet)</div>
-                  <div>{micActive ? '🎙️ Mic ativo' : '🔇 Sem microfone'}</div>
+                  <div role="status">
+                    {audio.status === 'offline' ? '🔴 Sem conexão — o áudio não está sendo enviado'
+                      : micActive ? '🎙️ Gravando' : '🔇 Sem microfone'}
+                  </div>
                   {aggregate && <div>Rostos: {aggregate.total} · Atentos: {aggregate.attentive} · {aggregate.pct}%</div>}
                   {debugPose && <div>yaw:{debugPose.yaw}° pitch:{debugPose.pitch}°</div>}
                 </div>
